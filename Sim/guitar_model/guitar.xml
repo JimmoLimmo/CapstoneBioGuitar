@@ -1,0 +1,71 @@
+<mujoco model="guitar">
+    <compiler angle="degree" meshdir="meshes/"/>
+
+    <asset>
+        <mesh name="body" file="body.stl"/>
+        <mesh name="neck" file="neck.stl"/>
+    </asset>
+
+    <worldbody>
+        <body name="guitar" pos="0 0 0">
+
+            <geom name="body" type="mesh" mesh="body"
+                  rgba="0 1 0 1" contype="0" conaffinity="0"/>
+
+            <body name="neck" pos="0.0308 -0.14885 0.005106">
+                <joint name="neck_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="neck" type="mesh" mesh="neck"
+                      rgba="1 0 0 1" contype="0" conaffinity="0"/>
+            </body>
+
+            <body name="string1_body" pos="0 0 0">
+                <joint name="string1_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string1" type="capsule"
+                      fromto="0.37455 -0.79314 0.04   0.37455 -0.13714 0.04"
+                      size="0.002" rgba="1 0 0 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+            <body name="string2_body" pos="0 0 0">
+                <joint name="string2_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string2" type="capsule"
+                      fromto="0.36678 -0.79314 0.04   0.36678 -0.13714 0.04"
+                      size="0.002" rgba="0 1 0 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+            <body name="string3_body" pos="0 0 0">
+                <joint name="string3_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string3" type="capsule"
+                      fromto="0.35901 -0.79314 0.04   0.35901 -0.13714 0.04"
+                      size="0.002" rgba="0 0 1 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+            <body name="string4_body" pos="0 0 0">
+                <joint name="string4_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string4" type="capsule"
+                      fromto="0.35124 -0.79314 0.04   0.35124 -0.13714 0.04"
+                      size="0.002" rgba="1 0 0 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+            <body name="string5_body" pos="0 0 0">
+                <joint name="string5_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string5" type="capsule"
+                      fromto="0.34347 -0.79314 0.04   0.34347 -0.13714 0.04"
+                      size="0.002" rgba="0 1 0 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+            <body name="string6_body" pos="0 0 0">
+                <joint name="string6_joint" type="slide" axis="1 0 0" range="0 0"/>
+                <geom name="string6" type="capsule"
+                      fromto="0.3357 -0.79314 0.04   0.3357 -0.13714 0.04"
+                      size="0.002" rgba="0 0 1 1"
+                      contype="1" conaffinity="1"/>
+            </body>
+
+        </body>
+    </worldbody>
+</mujoco>
