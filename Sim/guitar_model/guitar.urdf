@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<robot name="guitar">
+
+  <!-- Base link (body mesh, no collision) -->
+  <link name="base">
+    <visual>
+      <geometry><mesh filename="meshes/body.stl"/></geometry>
+      <material name="green"><color rgba="0 1 0 1"/></material>
+    </visual>
+  </link>
+
+  <!-- Neck (no collision) -->
+  <link name="neck">
+    <visual>
+      <origin xyz="0.0308 -0.14885 0.005106" rpy="0 0 0"/>
+      <geometry><mesh filename="meshes/neck.stl"/></geometry>
+      <material name="red"><color rgba="1 0 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="neck_joint" type="fixed">
+    <parent link="base"/>
+    <child link="neck"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 1 -->
+  <link name="string1">
+    <collision>
+      <origin xyz="0.35455 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.35455 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s1"><color rgba="1 0 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="string1_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string1"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 2 -->
+  <link name="string2">
+    <collision>
+      <origin xyz="0.34678 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.34678 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s2"><color rgba="0 1 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="string2_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string2"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 3 -->
+  <link name="string3">
+    <collision>
+      <origin xyz="0.33901 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.33901 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s3"><color rgba="0 0 1 1"/></material>
+    </visual>
+  </link>
+  <joint name="string3_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string3"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 4 -->
+  <link name="string4">
+    <collision>
+      <origin xyz="0.33124 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.33124 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s4"><color rgba="1 0 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="string4_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string4"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 5 -->
+  <link name="string5">
+    <collision>
+      <origin xyz="0.32347 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.32347 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s5"><color rgba="0 1 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="string5_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string5"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <!-- String 6 -->
+  <link name="string6">
+    <collision>
+      <origin xyz="0.3157 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.001" length="0.656"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.3157 -0.465 0.03" rpy="1.5708 1.5708 0"/>
+      <geometry><cylinder radius="0.0005" length="0.656"/></geometry>
+      <material name="s6"><color rgba="0 0 1 1"/></material>
+    </visual>
+  </link>
+  <joint name="string6_joint" type="fixed">
+    <parent link="base"/>
+    <child link="string6"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+</robot>
