@@ -1,22 +1,61 @@
 """
-Wrist-driven strum demo for right hand.
+Wrist-driven strum demo for the Prostheticasters right (strumming) hand.
 
 This replaces the old chord-pose demo (open/C_chord/G_chord/power_strum/pinch),
 which was left over from last year's fretting-hand team and cycled static hand
-SHAPES rather than showing a strum.
-Semester's sim needs to:
+SHAPES rather than showing a strum. This semester's sim needs to:
   1. Be tied to a hand model that actually has a thumb and functional wrist
-     joints We now load right_hand.xml instead, which has
-     the full wrist_PRO / wrist_UDEV / wrist_FLEX chain plus a complete thumb.
+     joints. We load right_hand.xml, which has the full wrist_PRO /
+     wrist_UDEV / wrist_FLEX chain plus a complete thumb.
   2. Demonstrate STRUMMING specifically: a wrist sweep across the strings
      over time, with a pick held in a fixed grip, timed to a tempo/song --
      not a sequence of static fretting-style chord shapes.
   3. Reuse the hand-agnostic timing engine from Parsing/GuitarProReader.py
-     when a real song is available, since it already computes real-world
-     beat timing independent of which hand executes it.
+     when a real song is available.
 
-python3 Sim/mvmnt_demo.py
+Run from the repo root (CapstoneBioGuitar-main/):
+    python Sim\\mvmnt_demo.py        (Windows)
+    python3 Sim/mvmnt_demo.py        (Linux/Mac)
 
+CALIBRATE MODE:
+Set CALIBRATE = True to get live sliders (hand x/y/z + roll/pitch/yaw, guitar
+x/y/z) in the PyBullet GUI for lining the hand up with the guitar, with
+ready-to-paste values printed to the terminal once a second. HAND_ANCHOR_POS /
+HAND_ANCHOR_EULER_DEG / GUITAR_POS below are Jimmy's tuned values from
+2026-09-10 -- CALIBRATE defaults to False now that those are in place.
+Flip it back to True any time the position needs more adjustment.
+
+STRUM TIMING MODEL:
+Each played NOTE gets a quick, fixed-length flick -- not a slow interpolation
+that stretches across however long you then wait. Rests and held notes just
+extend the wait between flicks; nothing moves during that wait. This is why
+a rest doesn't look like slow motion, and a run of fast notes looks like a
+run of fast, distinct strikes.
+
+STRUM MOTION MODEL (wrist only, for now):
+Each flick is four sub-phases instead of a simple there-and-back, so the
+return trip doesn't just re-drag the hand back through the strings it
+just struck -- it clears the strings FIRST, then swings back, then settles:
+  1. STRIKE   (0 -> ATTACK_FRAC): wrist_UDEV (the wrist's own yaw) sweeps
+     from neutral out to the stroke's extreme, actually crossing the
+     strings. wrist_FLEX stays at neutral/engaged depth.
+  2. LIFT     (ATTACK_FRAC -> LIFT_FRAC): wrist_FLEX rises from neutral up
+     to LIFT_FLEX_DEG, lifting the hand away from the guitar, WHILE
+     wrist_UDEV holds at the stroke's extreme (doesn't move yet).
+  3. RETURN   (LIFT_FRAC -> RETURN_FRAC): wrist_UDEV eases back to neutral
+     WHILE wrist_FLEX holds at LIFT_FLEX_DEG, so the return sweep happens
+     fully clear of the strings instead of dragging back through them.
+  4. SETTLE   (RETURN_FRAC -> 1.0): wrist_FLEX lowers back down to
+     neutral, ready for the next strike.
+So wrist_FLEX's own shape across a strike is exactly "goes up, then down":
+up during LIFT, held during RETURN, down during SETTLE.
+Both directions (D/U) use this same strike-lift-return-settle shape; only
+the wrist_UDEV target (WRIST_YAW_DOWN_DEG vs WRIST_YAW_UP_DEG) differs
+between them, since an upstrum is a mirror of a downstrum.
+The anchor/forearm is welded at Jimmy's calibrated position and does not
+move during the strum -- an earlier version also animated the anchor's yaw
+to mimic forearm rotation, but that's parked for now in favor of wrist-only
+motion.
 """
 
 import math
@@ -27,18 +66,44 @@ from time import sleep
 import pybullet as pb
 import pybullet_data
 
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
 HAND_MODEL_PATH = "Sim/MPL/right_hand.xml"   # full thumb + 3-DOF wrist model
-HAND_ANCHOR_POS = [0, 0, 0.45]               # fixed world point the hand's forearm attaches to
-GUITAR_POS = [-0.4, -0.4, 0.58]
 
-BPM = 90.0                                    # fallback tempo if no song file is loaded
-SONG_FILE = r"Parsing\inputs\Apollo-Live.gp3"   # e.g. "Parsing/inputs/queen-bohemian_rhapsody_complete.gp3"
+CALIBRATE = False   # set True to get position/rotation sliders again
+
+HAND_ANCHOR_POS = [0.411, 0.000, 0.537]                # Jimmy's tuned anchor position, 2026-09-10
+HAND_ANCHOR_EULER_DEG = [-13.263, -18.947, -123.158]   # Jimmy's tuned anchor roll/pitch/yaw, 2026-09-10
+GUITAR_POS = [-0.375, -0.268, 0.468]                   # Jimmy's tuned guitar position, 2026-09-10
+
+BPM = 90.0                                     # fallback tempo if no song file is loaded
+SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # set to None to always use the BPM fallback instead
 SONG_TRACK = 0
 
-DOWN_STRUM_DEG = -30.0   # wrist_FLEX target on a downstroke
-UP_STRUM_DEG = 30.0      # wrist_FLEX target on an upstroke
-LATERAL_SWEEP_DEG = 8.0  # small wrist_UDEV sweep so the stroke actually crosses strings
+STRIKE_DURATION = 0.15   # seconds -- how long a single full strike-lift-return-settle cycle takes
+
+# wrist_UDEV (the wrist's own yaw) -- the actual strum sweep across the
+# strings. Real joint range is roughly -14.9..45 deg, NOT symmetric, so
+# these two are deliberately different magnitudes.
+WRIST_YAW_DOWN_DEG = -14.0
+WRIST_YAW_UP_DEG = 25.0
+
+# wrist_FLEX (pitch) -- used here purely to LIFT the hand away from the
+# guitar during the return sweep, not as a strum axis. Real joint range is
+# roughly -59.6..59.6 deg. If this makes the hand dip INTO the guitar
+# instead of lifting away, flip the sign -- you'll see it immediately.
+LIFT_FLEX_DEG = 20.0
+
+# Phase boundaries as a fraction of STRIKE_DURATION. 0 -> ATTACK_FRAC is the
+# strike; ATTACK_FRAC -> LIFT_FRAC lifts clear of the strings; LIFT_FRAC ->
+# RETURN_FRAC swings the yaw back while still lifted; RETURN_FRAC -> 1.0
+# settles the lift back down. Keep 0 < ATTACK_FRAC < LIFT_FRAC < RETURN_FRAC < 1.0.
+ATTACK_FRAC = 0.25
+LIFT_FRAC = 0.45
+RETURN_FRAC = 0.75
+
 WRIST_PRO_BASE_DEG = 0.0  # constant forearm rotation aiming the hand over the strings
 
 STRING_LINK_NAMES = {f"string{i}" for i in range(1, 7)}
@@ -55,13 +120,22 @@ def smooth_step(t):
     return t * t * (3 - 2 * t)
 
 
+# ---------------------------------------------------------------------------
+# Strum timeline: a list of (direction, gap_before_this_note) pairs, where
+# gap_before is the real-world time to WAIT (holding neutral, no motion)
+# before firing the next quick strike. Either driven by a real song via
+# GuitarProReader (rests skipped entirely -- they just lengthen the gap
+# before the next played note), or a simple alternating down/up eighth-note
+# metronome pattern as a no-dependency fallback.
+# ---------------------------------------------------------------------------
 
 def build_strum_events_from_song(song_path, track=0):
-    """Returns a list of (direction, duration_seconds) using real beat timing.
-    direction alternates D/U per beat, which is the standard alternate-
-    strumming convention when the source notation doesn't carry explicit
-    stroke direction. Returns None if the song can't be loaded (missing
-    file, missing `guitarpro` package, etc.) so callers can fall back."""
+    """Returns a list of (direction, gap_before_seconds) for each PLAYED
+    note (rests are skipped, not turned into their own slow motion --
+    they just add to the gap before the next real note). direction
+    alternates D/U per note, the standard alternate-strumming convention
+    when the source notation doesn't carry explicit stroke direction.
+    Returns None if the song can't be loaded/parsed so callers can fall back."""
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "Parsing"))
         from GuitarProReader import GuitarProSong
@@ -75,20 +149,28 @@ def build_strum_events_from_song(song_path, track=0):
 
     try:
         song = GuitarProSong(song_path)
-        events = []
         direction_cycle = ["D", "U"]
+        onsets = []  # (direction, absolute_time) for every beat that actually has notes
         i = 0
         for timed_measure in song.yield_timed_measures(track):
             for timed_beat in timed_measure.yield_timed_beats():
-                duration = timed_beat.get_duration()
-                if duration <= 0:
-                    continue
-                events.append((direction_cycle[i % 2], duration))
+                if not timed_beat.beat.notes:
+                    continue  # rest: no strike, it just lengthens the gap before the next one
+                onsets.append((direction_cycle[i % 2], timed_beat.time))
                 i += 1
-        if not events:
-            print("[strum] Song loaded but produced no beats; using fallback metronome pattern.")
+
+        if not onsets:
+            print("[strum] Song loaded but had no played notes (all rests?); using fallback metronome pattern.")
             return None
-        print(f"[strum] Loaded {len(events)} strum events from {song_path}")
+
+        events = []
+        prev_time = onsets[0][1]
+        for idx, (direction, t) in enumerate(onsets):
+            gap = 0.0 if idx == 0 else max(0.0, t - prev_time)
+            events.append((direction, gap))
+            prev_time = t
+
+        print(f"[strum] Loaded {len(events)} played-note strum events (rests skipped) from {song_path}")
         return events
     except Exception as e:
         print(f"[strum] Failed to parse {song_path} ({e}); using fallback metronome pattern.")
@@ -102,37 +184,63 @@ def build_fallback_strum_events(bpm, n_events=64):
     return [(direction_cycle[i % 2], eighth_note_seconds) for i in range(n_events)]
 
 
-STRUM_EVENTS = build_strum_events_from_song(SONG_FILE, SONG_TRACK) if SONG_FILE else None
-if STRUM_EVENTS is None:
-    STRUM_EVENTS = build_fallback_strum_events(BPM)
+_song_events = build_strum_events_from_song(SONG_FILE, SONG_TRACK) if SONG_FILE else None
+STRUM_EVENTS = _song_events if _song_events is not None else build_fallback_strum_events(BPM)
+TEMPO_SOURCE = "song file" if _song_events is not None else f"{BPM} BPM fallback"
 
 
 # ---------------------------------------------------------------------------
-# Hand shape: a single fixed "pick grip" pose (thumb pinched against index
-# holding a pick, remaining fingers curled loosely out of the way). Per the
-# PDR: this semester's right hand still needs to "grab a pick and strum" --
-# the wrist does the strumming motion; the fingers just need to hold on.
+# Hand shape: a clenched-ish fist, mimicking a pick loosely held in the
+# closed hand. Placeholder until we model an actual pick + a precise
+# thumb/index pinch grip -- for now this is just meant to look like a fist
+# wrapped around something, not an open hand.
 # ---------------------------------------------------------------------------
 
 GRIP_POSE = {
     "wrist_PRO": d(WRIST_PRO_BASE_DEG),
-    "thumb_ABD": d(20), "thumb_MCP": d(35), "thumb_PIP": d(25), "thumb_DIP": d(15),
-    "index_MCP": d(40), "index_PIP": d(35), "index_DIP": d(20),
-    "middle_MCP": d(55), "middle_PIP": d(60), "middle_DIP": d(30),
-    "ring_MCP": d(60), "ring_PIP": d(65), "ring_DIP": d(30),
-    "pinky_MCP": d(60), "pinky_PIP": d(65), "pinky_DIP": d(30),
+    "thumb_ABD": d(15), "thumb_MCP": d(45), "thumb_PIP": d(55), "thumb_DIP": d(35),
+    "index_MCP": d(70), "index_PIP": d(95), "index_DIP": d(60),
+    "middle_MCP": d(75), "middle_PIP": d(100), "middle_DIP": d(65),
+    "ring_MCP": d(75), "ring_PIP": d(100), "ring_DIP": d(65),
+    "pinky_MCP": d(75), "pinky_PIP": d(100), "pinky_DIP": d(65),
 }
 
 
-def strum_pose(direction, alpha):
-    """Grip pose plus a wrist sweep toward the down- or up-strum extreme.
-    alpha 0->1 blends from neutral wrist angle to the stroke's target angle."""
+def strike_pose(direction, phase):
+    """Four sub-phases within a single strike (see module docstring):
+    strike (UDEV sweeps out) -> lift (FLEX rises, UDEV holds out) ->
+    return (UDEV eases back to neutral, FLEX holds lifted) -> settle
+    (FLEX lowers back to neutral). Lifting BEFORE swinging back is what
+    keeps the return trip from dragging back through the strings it just
+    struck -- by the time wrist_UDEV starts easing back, the hand is
+    already clear."""
     pose = dict(GRIP_POSE)
-    flex_target = d(DOWN_STRUM_DEG) if direction == "D" else d(UP_STRUM_DEG)
-    lateral_target = d(LATERAL_SWEEP_DEG) if direction == "D" else d(-LATERAL_SWEEP_DEG)
-    t = smooth_step(alpha)
-    pose["wrist_FLEX"] = flex_target * t
-    pose["wrist_UDEV"] = lateral_target * t
+    yaw_target = d(WRIST_YAW_DOWN_DEG if direction == "D" else WRIST_YAW_UP_DEG)
+    lift_target = d(LIFT_FLEX_DEG)
+
+    if phase <= ATTACK_FRAC:
+        # STRIKE: yaw sweeps out to the stroke extreme, no lift yet.
+        t = smooth_step(phase / ATTACK_FRAC) if ATTACK_FRAC > 0 else 1.0
+        pose["wrist_UDEV"] = yaw_target * t
+        pose["wrist_FLEX"] = 0.0
+    elif phase <= LIFT_FRAC:
+        # LIFT: rise clear of the strings while still holding the yaw out.
+        span = LIFT_FRAC - ATTACK_FRAC
+        t = smooth_step((phase - ATTACK_FRAC) / span) if span > 0 else 1.0
+        pose["wrist_UDEV"] = yaw_target
+        pose["wrist_FLEX"] = lift_target * t
+    elif phase <= RETURN_FRAC:
+        # RETURN: swing yaw back to neutral while still lifted clear.
+        span = RETURN_FRAC - LIFT_FRAC
+        t = smooth_step((phase - LIFT_FRAC) / span) if span > 0 else 1.0
+        pose["wrist_UDEV"] = yaw_target * (1 - t)
+        pose["wrist_FLEX"] = lift_target
+    else:
+        # SETTLE: lower back down to neutral, ready for the next strike.
+        span = 1.0 - RETURN_FRAC
+        t = smooth_step((phase - RETURN_FRAC) / span) if span > 0 else 1.0
+        pose["wrist_UDEV"] = 0.0
+        pose["wrist_FLEX"] = lift_target * (1 - t)
     return pose
 
 
@@ -175,7 +283,7 @@ constraint = pb.createConstraint(
     jointAxis=[0, 0, 0],
     parentFramePosition=[0, 0, 0],
     childFramePosition=HAND_ANCHOR_POS,
-    childFrameOrientation=pb.getQuaternionFromEuler([-math.pi / 2, 0, math.pi])
+    childFrameOrientation=pb.getQuaternionFromEuler([d(a) for a in HAND_ANCHOR_EULER_DEG])
 )
 
 pb.resetDebugVisualizerCamera(
@@ -198,7 +306,7 @@ if _missing:
     raise RuntimeError(
         f"Loaded hand model '{HAND_MODEL_PATH}' is missing joints {sorted(_missing)}. "
         "This demo needs a model with a full wrist (PRO/UDEV/FLEX) and a thumb -- "
-        "MPL.xml does not have these; use right_hand.xml or mpl2.xml instead."
+        "MPL.xml does not have a thumb; use right_hand.xml or mpl2.xml instead."
     )
 
 # Precompute which link indices belong to the guitar's 6 strings, and which
@@ -227,23 +335,89 @@ def apply_pose(pose):
         )
 
 
+dt = 1 / 240
+
 # ---------------------------------------------------------------------------
-# Main loop: walk the strum timeline, driving the wrist through each stroke
-# and logging which strings got touched during that stroke.
+# CALIBRATE mode: freeze the hand in its neutral grip pose and expose the
+# anchor position/rotation and guitar position as live sliders, so you can
+# drag them into alignment by eye instead of guessing numbers blind.
+# ---------------------------------------------------------------------------
+
+if CALIBRATE:
+    sliders = {
+        "anchor_x": pb.addUserDebugParameter("anchor_x", -1.0, 1.0, HAND_ANCHOR_POS[0]),
+        "anchor_y": pb.addUserDebugParameter("anchor_y", -1.0, 1.0, HAND_ANCHOR_POS[1]),
+        "anchor_z": pb.addUserDebugParameter("anchor_z", -1.0, 1.0, HAND_ANCHOR_POS[2]),
+        "anchor_roll": pb.addUserDebugParameter("anchor_roll_deg", -180, 180, HAND_ANCHOR_EULER_DEG[0]),
+        "anchor_pitch": pb.addUserDebugParameter("anchor_pitch_deg", -180, 180, HAND_ANCHOR_EULER_DEG[1]),
+        "anchor_yaw": pb.addUserDebugParameter("anchor_yaw_deg", -180, 180, HAND_ANCHOR_EULER_DEG[2]),
+        "guitar_x": pb.addUserDebugParameter("guitar_x", -1.5, 1.5, GUITAR_POS[0]),
+        "guitar_y": pb.addUserDebugParameter("guitar_y", -1.5, 1.5, GUITAR_POS[1]),
+        "guitar_z": pb.addUserDebugParameter("guitar_z", -1.0, 1.0, GUITAR_POS[2]),
+    }
+    guitar_orn = pb.getQuaternionFromEuler([0, 0, math.pi / 2])
+    print("[calibrate] Drag the sliders in the GUI until the hand sits naturally over the "
+          "strings. Current values print here once a second -- copy the final ones into "
+          "HAND_ANCHOR_POS / HAND_ANCHOR_EULER_DEG / GUITAR_POS at the top of this file, "
+          "then set CALIBRATE = False.")
+
+    print_timer = 0.0
+    while True:
+        ax = pb.readUserDebugParameter(sliders["anchor_x"])
+        ay = pb.readUserDebugParameter(sliders["anchor_y"])
+        az = pb.readUserDebugParameter(sliders["anchor_z"])
+        roll = pb.readUserDebugParameter(sliders["anchor_roll"])
+        pitch = pb.readUserDebugParameter(sliders["anchor_pitch"])
+        yaw = pb.readUserDebugParameter(sliders["anchor_yaw"])
+        gx = pb.readUserDebugParameter(sliders["guitar_x"])
+        gy = pb.readUserDebugParameter(sliders["guitar_y"])
+        gz = pb.readUserDebugParameter(sliders["guitar_z"])
+
+        pb.changeConstraint(
+            constraint,
+            jointChildPivot=[ax, ay, az],
+            jointChildFrameOrientation=pb.getQuaternionFromEuler([d(roll), d(pitch), d(yaw)]),
+            maxForce=500
+        )
+        pb.resetBasePositionAndOrientation(guitar_parts, [gx, gy, gz], guitar_orn)
+        apply_pose(GRIP_POSE)
+
+        pb.stepSimulation()
+
+        print_timer += dt
+        if print_timer >= 1.0:
+            print_timer = 0.0
+            print(f"HAND_ANCHOR_POS = [{ax:.3f}, {ay:.3f}, {az:.3f}]   "
+                  f"HAND_ANCHOR_EULER_DEG = [{roll:.1f}, {pitch:.1f}, {yaw:.1f}]   "
+                  f"GUITAR_POS = [{gx:.3f}, {gy:.3f}, {gz:.3f}]")
+
+        sleep(dt)
+
+# ---------------------------------------------------------------------------
+# Normal mode: walk the strum timeline. Each event is (direction, gap) --
+# gap seconds of holding neutral (no motion), then a fixed STRIKE_DURATION
+# strike-lift-return-settle cycle (see module docstring). Rests/long notes just
+# make gap bigger; they never slow the strike itself down. The
+# forearm/anchor stays fixed the whole time.
 # ---------------------------------------------------------------------------
 
 event_idx = 0
 event_elapsed = 0.0
 strings_hit_this_stroke = set()
-dt = 1 / 240
 
-print(f"[strum] {len(STRUM_EVENTS)} events queued, tempo source: "
-      f"{'song file' if SONG_FILE else f'{BPM} BPM fallback'}")
+print(f"[strum] {len(STRUM_EVENTS)} events queued, tempo source: {TEMPO_SOURCE}")
 
 while True:
-    direction, duration = STRUM_EVENTS[event_idx % len(STRUM_EVENTS)]
-    alpha = min(event_elapsed / duration, 1.0) if duration > 0 else 1.0
-    apply_pose(strum_pose(direction, alpha))
+    direction, gap = STRUM_EVENTS[event_idx % len(STRUM_EVENTS)]
+    strike_time = min(STRIKE_DURATION, gap) if gap > 0 else STRIKE_DURATION
+    wait_time = max(0.0, gap - strike_time)
+    total_event_time = wait_time + strike_time
+
+    if event_elapsed < wait_time:
+        apply_pose(GRIP_POSE)  # holding still -- this is the rest/long-note gap, not a slow strum
+    else:
+        phase = (event_elapsed - wait_time) / strike_time if strike_time > 0 else 1.0
+        apply_pose(strike_pose(direction, phase))
 
     pb.stepSimulation()
 
@@ -253,10 +427,10 @@ while True:
             strings_hit_this_stroke.add(guitar_link_names[g_link])
 
     event_elapsed += dt
-    if event_elapsed >= duration:
+    if event_elapsed >= total_event_time:
         arrow = "↓" if direction == "D" else "↑"
         hit_str = ", ".join(sorted(strings_hit_this_stroke)) if strings_hit_this_stroke else "(no string contact)"
-        print(f"{arrow} strum #{event_idx}: {hit_str}")
+        print(f"{arrow} strum #{event_idx} (waited {wait_time:.2f}s): {hit_str}")
         strings_hit_this_stroke = set()
         event_elapsed = 0.0
         event_idx += 1
