@@ -26,36 +26,23 @@ HAND_ANCHOR_EULER_DEG / GUITAR_POS below are Jimmy's tuned values from
 Flip it back to True any time the position needs more adjustment.
 
 STRUM TIMING MODEL:
-Each played NOTE gets a quick, fixed-length flick -- not a slow interpolation
-that stretches across however long you then wait. Rests and held notes just
-extend the wait between flicks; nothing moves during that wait. This is why
-a rest doesn't look like slow motion, and a run of fast notes looks like a
-run of fast, distinct strikes.
+Each played NOTE gets a quick, fixed-length flick (attack then release) --
+not a slow interpolation that stretches across however long you then wait.
+Rests and held notes just extend the wait between flicks; nothing moves
+during that wait. This is why a rest doesn't look like slow motion, and a
+run of fast notes looks like a run of fast, distinct strikes.
 
 STRUM MOTION MODEL (wrist only, for now):
-Each flick is four sub-phases instead of a simple there-and-back, so the
-return trip doesn't just re-drag the hand back through the strings it
-just struck -- it clears the strings FIRST, then swings back, then settles:
-  1. STRIKE   (0 -> ATTACK_FRAC): wrist_UDEV (the wrist's own yaw) sweeps
-     from neutral out to the stroke's extreme, actually crossing the
-     strings. wrist_FLEX stays at neutral/engaged depth.
-  2. LIFT     (ATTACK_FRAC -> LIFT_FRAC): wrist_FLEX rises from neutral up
-     to LIFT_FLEX_DEG, lifting the hand away from the guitar, WHILE
-     wrist_UDEV holds at the stroke's extreme (doesn't move yet).
-  3. RETURN   (LIFT_FRAC -> RETURN_FRAC): wrist_UDEV eases back to neutral
-     WHILE wrist_FLEX holds at LIFT_FLEX_DEG, so the return sweep happens
-     fully clear of the strings instead of dragging back through them.
-  4. SETTLE   (RETURN_FRAC -> 1.0): wrist_FLEX lowers back down to
-     neutral, ready for the next strike.
-So wrist_FLEX's own shape across a strike is exactly "goes up, then down":
-up during LIFT, held during RETURN, down during SETTLE.
-Both directions (D/U) use this same strike-lift-return-settle shape; only
-the wrist_UDEV target (WRIST_YAW_DOWN_DEG vs WRIST_YAW_UP_DEG) differs
-between them, since an upstrum is a mirror of a downstrum.
+The flick mixes two wrist rotations, driven by the same attack/release
+envelope so they move together:
+  - wrist_FLEX  (wrist "pitch" -- flexion/extension, moves the hand toward/
+    away from the guitar body)
+  - wrist_UDEV  (wrist "yaw" -- ulnar/radial deviation, the wrist sweeping
+    side to side relative to the forearm)
 The anchor/forearm is welded at Jimmy's calibrated position and does not
 move during the strum -- an earlier version also animated the anchor's yaw
 to mimic forearm rotation, but that's parked for now in favor of wrist-only
-motion.
+motion. DOWN/UP degree constants below are independently tunable per axis.
 """
 
 import math
@@ -82,27 +69,16 @@ BPM = 90.0                                     # fallback tempo if no song file 
 SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # set to None to always use the BPM fallback instead
 SONG_TRACK = 0
 
-STRIKE_DURATION = 0.15   # seconds -- how long a single full strike-lift-return-settle cycle takes
+STRIKE_DURATION = 0.15   # seconds -- how long a single strum flick takes, independent of tempo/rests
 
-# wrist_UDEV (the wrist's own yaw) -- the actual strum sweep across the
-# strings. Real joint range is roughly -14.9..45 deg, NOT symmetric, so
-# these two are deliberately different magnitudes.
+# wrist_FLEX (pitch) -- real joint range is roughly -59.6..59.6 deg
+DOWN_STRUM_DEG = -30.0
+UP_STRUM_DEG = 30.0
+
+# wrist_UDEV (wrist's own yaw) -- real joint range is roughly -14.9..45 deg,
+# NOT symmetric, so these two are deliberately different magnitudes
 WRIST_YAW_DOWN_DEG = -14.0
 WRIST_YAW_UP_DEG = 25.0
-
-# wrist_FLEX (pitch) -- used here purely to LIFT the hand away from the
-# guitar during the return sweep, not as a strum axis. Real joint range is
-# roughly -59.6..59.6 deg. If this makes the hand dip INTO the guitar
-# instead of lifting away, flip the sign -- you'll see it immediately.
-LIFT_FLEX_DEG = 20.0
-
-# Phase boundaries as a fraction of STRIKE_DURATION. 0 -> ATTACK_FRAC is the
-# strike; ATTACK_FRAC -> LIFT_FRAC lifts clear of the strings; LIFT_FRAC ->
-# RETURN_FRAC swings the yaw back while still lifted; RETURN_FRAC -> 1.0
-# settles the lift back down. Keep 0 < ATTACK_FRAC < LIFT_FRAC < RETURN_FRAC < 1.0.
-ATTACK_FRAC = 0.25
-LIFT_FRAC = 0.45
-RETURN_FRAC = 0.75
 
 WRIST_PRO_BASE_DEG = 0.0  # constant forearm rotation aiming the hand over the strings
 
@@ -118,6 +94,14 @@ def smooth_step(t):
     """Ease-in-out curve: starts/ends slow, fast in the middle."""
     t = max(0.0, min(1.0, t))
     return t * t * (3 - 2 * t)
+
+
+def strike_envelope(phase):
+    """0 -> 1 -> 0 bump across phase in [0, 1]: attack over the first half,
+    release back to 0 over the second half."""
+    if phase < 0.5:
+        return smooth_step(phase / 0.5)
+    return 1.0 - smooth_step((phase - 0.5) / 0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -207,40 +191,15 @@ GRIP_POSE = {
 
 
 def strike_pose(direction, phase):
-    """Four sub-phases within a single strike (see module docstring):
-    strike (UDEV sweeps out) -> lift (FLEX rises, UDEV holds out) ->
-    return (UDEV eases back to neutral, FLEX holds lifted) -> settle
-    (FLEX lowers back to neutral). Lifting BEFORE swinging back is what
-    keeps the return trip from dragging back through the strings it just
-    struck -- by the time wrist_UDEV starts easing back, the hand is
-    already clear."""
+    """Grip pose plus the wrist's two contributions to the flick: FLEX
+    (pitch) and UDEV (the wrist's own yaw). Wrist-only for now -- the
+    forearm/anchor stays fixed at Jimmy's calibrated position."""
     pose = dict(GRIP_POSE)
+    env = strike_envelope(phase)
+    flex_target = d(DOWN_STRUM_DEG if direction == "D" else UP_STRUM_DEG)
     yaw_target = d(WRIST_YAW_DOWN_DEG if direction == "D" else WRIST_YAW_UP_DEG)
-    lift_target = d(LIFT_FLEX_DEG)
-
-    if phase <= ATTACK_FRAC:
-        # STRIKE: yaw sweeps out to the stroke extreme, no lift yet.
-        t = smooth_step(phase / ATTACK_FRAC) if ATTACK_FRAC > 0 else 1.0
-        pose["wrist_UDEV"] = yaw_target * t
-        pose["wrist_FLEX"] = 0.0
-    elif phase <= LIFT_FRAC:
-        # LIFT: rise clear of the strings while still holding the yaw out.
-        span = LIFT_FRAC - ATTACK_FRAC
-        t = smooth_step((phase - ATTACK_FRAC) / span) if span > 0 else 1.0
-        pose["wrist_UDEV"] = yaw_target
-        pose["wrist_FLEX"] = lift_target * t
-    elif phase <= RETURN_FRAC:
-        # RETURN: swing yaw back to neutral while still lifted clear.
-        span = RETURN_FRAC - LIFT_FRAC
-        t = smooth_step((phase - LIFT_FRAC) / span) if span > 0 else 1.0
-        pose["wrist_UDEV"] = yaw_target * (1 - t)
-        pose["wrist_FLEX"] = lift_target
-    else:
-        # SETTLE: lower back down to neutral, ready for the next strike.
-        span = 1.0 - RETURN_FRAC
-        t = smooth_step((phase - RETURN_FRAC) / span) if span > 0 else 1.0
-        pose["wrist_UDEV"] = 0.0
-        pose["wrist_FLEX"] = lift_target * (1 - t)
+    pose["wrist_FLEX"] = flex_target * env
+    pose["wrist_UDEV"] = yaw_target * env
     return pose
 
 
@@ -396,9 +355,9 @@ if CALIBRATE:
 # ---------------------------------------------------------------------------
 # Normal mode: walk the strum timeline. Each event is (direction, gap) --
 # gap seconds of holding neutral (no motion), then a fixed STRIKE_DURATION
-# strike-lift-return-settle cycle (see module docstring). Rests/long notes just
-# make gap bigger; they never slow the strike itself down. The
-# forearm/anchor stays fixed the whole time.
+# flick that mixes wrist_FLEX + wrist_UDEV (wrist-only, see module
+# docstring). Rests/long notes just make gap bigger; they never slow the
+# flick itself down. The forearm/anchor stays fixed the whole time.
 # ---------------------------------------------------------------------------
 
 event_idx = 0
