@@ -16,22 +16,22 @@ from time import perf_counter, sleep
 import pybullet as pb
 import pybullet_data
 
-# --- placement (tuned 2026-09-10 in CALIBRATE mode) -------------------------
+#placement 
 HAND_MODEL_PATH = "Sim/MPL/right_hand.xml"
 CALIBRATE = False
 HAND_ANCHOR_POS = [0.411, 0.000, 0.537]
 HAND_ANCHOR_EULER_DEG = [-13.263, -18.947, -123.158]
 GUITAR_POS = [-0.375, -0.268, 0.468]
 
-# --- song -------------------------------------------------------------------
-SONG_FILE = None                # path to a .gp3/.gp4/.gp5, or None for the BPM fallback
-SONG_TRACK = 0
+# song 
+SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
+SONG_TRACK = 1
 BPM = 90.0
 STRUM_INTERVAL_BEATS = 1.0      # 1.0 = one strum per beat, 0.5 = eighths
 FALLBACK_STRUMS = 32
 STRUM_DIRECTIONS = ["D"]        # cycled per stroke; ["D", "U"] to alternate
 
-# --- motion -----------------------------------------------------------------
+# motion 
 STRIKE_DURATION = 0.12          # sweep across the strings
 RECOVER_DURATION = 0.18         # lifted return, only when the next stroke needs it
 WRIST_YAW_DOWN_DEG = -20.0      # wrist_UDEV range is about -14.9..45, deliberately asymmetric
@@ -64,21 +64,37 @@ def smooth(t):
     return t * t * (3 - 2 * t)
 
 
-# --- schedule ---------------------------------------------------------------
+# schedule
 # Each stroke is (onset, direction, strike_duration, recover_duration) with
 # onset an absolute time in seconds from the start of the run.
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SONG_DIR = os.path.join(REPO_ROOT, "Parsing", "inputs")
+
+
+def find_song(name):
+    """Accepts a repo-relative path, a bare filename, or a stray leading slash."""
+    for candidate in (name,
+                      os.path.join(REPO_ROOT, name.lstrip("/\\")),
+                      os.path.join(SONG_DIR, os.path.basename(name))):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 def song_onsets(path, track):
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "Parsing"))
+    """(onsets_from_zero, track_names). Rests are skipped; they just widen the gap."""
+    sys.path.insert(0, os.path.join(REPO_ROOT, "Parsing"))
     from GuitarProReader import GuitarProSong
 
     song = GuitarProSong(path)
+    names = [t.name for t in song.song.tracks]
     times = []
     for measure in song.yield_timed_measures(track):
         for beat in measure.yield_timed_beats():
-            if beat.beat.notes:                      # rests just widen the gap
+            if beat.beat.notes:
                 times.append(beat.time)
-    return [t - times[0] for t in times] if times else []
+    return ([t - times[0] for t in times] if times else []), names
 
 
 def fallback_onsets():
@@ -88,13 +104,29 @@ def fallback_onsets():
 
 def build_schedule():
     onsets, source = [], f"{BPM} BPM fallback"
-    if SONG_FILE and os.path.exists(SONG_FILE):
-        try:
-            onsets = song_onsets(SONG_FILE, SONG_TRACK)
-            source = SONG_FILE
-        except Exception as e:
-            print(f"[strum] {SONG_FILE} failed to parse ({e})")
+    if SONG_FILE:
+        found = find_song(SONG_FILE)
+        if not found:
+            available = sorted(f for f in os.listdir(SONG_DIR) if f.lower().endswith((".gp3", ".gp4", ".gp5")))
+            print(f"[strum] SONG_FILE not found: {SONG_FILE}")
+            print(f"[strum]   songs available in Parsing/inputs: {', '.join(available) or 'none'}")
+        else:
+            try:
+                onsets, tracks = song_onsets(found, SONG_TRACK)
+                if onsets:
+                    source = f"{os.path.basename(found)} track {SONG_TRACK} ({tracks[SONG_TRACK]})"
+                else:
+                    print(f"[strum] {os.path.basename(found)} track {SONG_TRACK} has no played notes.")
+                    print("[strum]   tracks: " + ", ".join(f"{i}={n}" for i, n in enumerate(tracks)))
+            except ImportError:
+                print("[strum] PyGuitarPro is not installed in this environment.")
+                print("[strum]   fix with:  pip install PyGuitarPro")
+            except IndexError:
+                print(f"[strum] SONG_TRACK {SONG_TRACK} is out of range for this song.")
+            except Exception as e:
+                print(f"[strum] {os.path.basename(found)} failed to parse ({e})")
     if not onsets:
+        print("[strum] using the constant-tempo fallback instead.")
         onsets = fallback_onsets()
 
     schedule = []
@@ -110,7 +142,7 @@ def build_schedule():
     return schedule, source
 
 
-# --- pose -------------------------------------------------------------------
+# pose
 # A down-stroke starts at the UP angle and sweeps to the DOWN angle; an
 # up-stroke mirrors it. So the follow-through of one stroke is already the
 # ready position of the opposite stroke, and recovery only has distance to
@@ -159,7 +191,7 @@ def pose(yaw_deg, flex_deg):
     return p
 
 
-# --- world ------------------------------------------------------------------
+# world
 pb.connect(pb.GUI)
 pb.setGravity(0, 0, -9.81)
 pb.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -222,7 +254,7 @@ def strings_touching():
     return hit
 
 
-# --- calibrate --------------------------------------------------------------
+# calibration
 if CALIBRATE:
     names = ["anchor_x", "anchor_y", "anchor_z", "anchor_roll_deg", "anchor_pitch_deg",
              "anchor_yaw_deg", "guitar_x", "guitar_y", "guitar_z"]
@@ -248,7 +280,7 @@ if CALIBRATE:
                   f"GUITAR_POS = [{v[6]:.3f}, {v[7]:.3f}, {v[8]:.3f}]")
         sleep(DT)
 
-# --- run --------------------------------------------------------------------
+# run 9 j
 # Pose comes from the wall clock, so strokes land on time whatever the physics
 # manages; physics steps catch up to real time and resync if they can't.
 
