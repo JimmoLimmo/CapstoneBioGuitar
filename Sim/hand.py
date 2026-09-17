@@ -8,7 +8,7 @@ pb.setGravity(0, 0, -9.81)
 pb.setAdditionalSearchPath(pybullet_data.getDataPath())
 pb.loadURDF("plane.urdf")
 
-models = pb.loadMJCF("Sim/MPL/MPL.xml")
+models = pb.loadMJCF("Sim/MPL/right_hand.xml")
 hand = models[0]
 
 for i in range(-1, pb.getNumJoints(hand)):
