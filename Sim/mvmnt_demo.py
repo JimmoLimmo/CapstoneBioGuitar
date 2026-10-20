@@ -18,15 +18,17 @@ import pybullet_data
 
 #placement 
 HAND_MODEL_PATH = "Sim/MPL/right_hand.xml"
-CALIBRATE = False
+CALIBRATE = True
 HAND_ANCHOR_POS = [0.411, 0.000, 0.537]
 HAND_ANCHOR_EULER_DEG = [-13.263, -18.947, -123.158]
 GUITAR_POS = [-0.375, -0.268, 0.468]
 
 # song 
 SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
+# SONG_FILE = "Parsing/inputs/DragonForce - Through the Fire and Flames.gp5"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
+# SONG_FILE = None   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
 SONG_TRACK = 1
-BPM = 90.0
+BPM = 132.0
 STRUM_INTERVAL_BEATS = 1.0      # 1.0 = one strum per beat, 0.5 = eighths
 FALLBACK_STRUMS = 32
 STRUM_DIRECTIONS = ["D"]        # cycled per stroke; ["D", "U"] to alternate
