@@ -1,15 +1,7 @@
-"""Song-driven strum choreography for the Prostheticasters right hand.
+"""Song-driven strum choreography.
 
 Pure math + I/O for turning a Guitar Pro file (or a constant-tempo fallback)
-into a wrist yaw/flex trajectory over wall-clock time. No pybullet import and
-no hardware import here on purpose: both Sim/mvmnt_demo.py (PyBullet) and
-Hardware/servo_output.py (real PCA9685 servos) import this module and drive
-whatever "actuator" they have from the same wrist_at()/pose() output, so the
-choreography only ever lives in one place.
-
-Run either consumer from the repo root, same as before:
-    python Sim/mvmnt_demo.py
-    python Hardware/servo_output.py
+into a wrist yaw/flex trajectory over wall-clock time.
 """
 
 import bisect
@@ -17,15 +9,17 @@ import math
 import os
 import sys
 
-# --- song -------------------------------------------------------------------
+# song 
 SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
+# SONG_FILE = "Parsing/inputs/DragonForce - Through the Fire and Flames.gp5"
+# SONG_FILE = None
 SONG_TRACK = 1
 BPM = 90.0
 STRUM_INTERVAL_BEATS = 1.0      # 1.0 = one strum per beat, 0.5 = eighths
 FALLBACK_STRUMS = 32
 STRUM_DIRECTIONS = ["D"]        # cycled per stroke; ["D", "U"] to alternate
 
-# --- motion -----------------------------------------------------------------
+# motion
 STRIKE_DURATION = 0.12          # sweep across the strings
 RECOVER_DURATION = 0.18         # lifted return, only when the next stroke needs it
 WRIST_YAW_DOWN_DEG = -20.0      # wrist_UDEV range is about -14.9..45, deliberately asymmetric
@@ -55,9 +49,8 @@ def smooth(t):
     return t * t * (3 - 2 * t)
 
 
-# --- schedule ---------------------------------------------------------------
-# Each stroke is (onset, direction, strike_duration, recover_duration) with
-# onset an absolute time in seconds from the start of the run.
+# schedule
+# Each stroke is (onset, direction, strike_duration, recover_duration) with onset an absolute time in seconds from the start of the run.
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SONG_DIR = os.path.join(REPO_ROOT, "Parsing", "inputs")
@@ -133,13 +126,11 @@ def build_schedule():
     return schedule, source
 
 
-# --- pose -------------------------------------------------------------------
-# A down-stroke starts at the UP angle and sweeps to the DOWN angle; an
-# up-stroke mirrors it. So the follow-through of one stroke is already the
-# ready position of the opposite stroke, and recovery only has distance to
-# travel when two strokes repeat the same direction -- which is exactly when
-# the return trip would otherwise drag back through the strings. The lift
-# scales with that distance, so alternating strumming lifts nothing at all.
+# pose
+# A down-stroke starts at the UP angle and sweeps to the DOWN angle; an up-stroke mirrors it. 
+# So the follow-through of one stroke is already the ready position of the opposite stroke, and recovery only has distance to travel when two strokes repeat the same direction  
+# which is exactly when the return trip would otherwise drag back through the strings. 
+# The lift scales with that distance, so alternating strumming lifts nothing at all.
 
 def ready_yaw(direction):
     return WRIST_YAW_UP_DEG if direction == "D" else WRIST_YAW_DOWN_DEG

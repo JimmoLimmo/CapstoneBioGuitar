@@ -1,9 +1,8 @@
 # Hardware output (right hand)
 
 Turns the strum choreography into real PCA9685 servo commands for the
-marionette wrist in the CDR (ball-and-socket joint, four MG90S servos in two
-opposing pairs). Tested only against a fake PCA9685 so far; **no real servo
-has run this yet.**
+marionette wrist (ball-and-socket joint, four MG90S servos in two opposing pairs). 
+Tested only against a fake PCA9685 so far; **no real servo has run this yet.**
 
 ## The chain
 
@@ -14,9 +13,31 @@ Hardware/servo_output.py      per-servo calibration -> 4 PCA9685 pulses, 50 Hz
 ```
 
 `strum_motion.py` is shared with the PyBullet sim, so timing changes made
-there show up in both. (Note: `Sim/mvmnt_demo.py` currently carries its own
-inline copy of this logic, with BPM 132 instead of 90. The motion math is
-identical, but the two copies can drift apart.)
+there show up in both.
+
+## Live sim alongside the hand
+
+The sim can show the same wrist commands the servos receive. Start the sim
+first, on the computer with the screen:
+
+    python Sim/mvmnt_demo.py --follow
+
+Then start the hand on the Jetson, using the sim computer's IP address:
+
+    python Hardware/servo_output.py --wrist-only --sim-ip <sim computer IP>
+
+To try it with no hardware, run both on one computer:
+
+    python Hardware/servo_output.py --dry-run --sim-ip 127.0.0.1
+
+If nothing moves, allow UDP port 5005 through the sim computer's firewall.
+If the sim runs ahead of the hand, measure the gap on video and add it with
+`--delay`, for example `--delay 0.08`.
+
+The sim shows commands, not measured motion, because the MG90S reports no
+position. It also uses the generic MPL hand, so it stops at that model's wrist
+limit (about -15 deg) when the command goes to -20 deg. If the sim stops, the
+servos keep running.
 
 ## Why there's a kinematics step
 

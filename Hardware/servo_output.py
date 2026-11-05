@@ -3,6 +3,7 @@
     python Hardware/servo_output.py --dry-run          # no hardware: prints targets + servo demand
     python Hardware/servo_output.py --wrist-only --speed 0.25   # first wrist bench run: quarter speed
     python Hardware/servo_output.py                    # full hand, real speed
+    python Hardware/servo_output.py --wrist-only --sim-ip 192.168.1.20   # also stream to mvmnt_demo.py --follow
 
 Every tick (50 Hz):
     strum_motion.wrist_at(t)          -> (deviation_deg, flexion_deg)
@@ -27,6 +28,7 @@ from strum_motion import (  # noqa: E402  (path insert must come first)
     smooth,
     wrist_at,
 )
+from motion_link import DEFAULT_PORT, PoseSender  # noqa: E402
 import wrist_kinematics as wk  # noqa: E402
 
 # --- wrist servos (TODO: fill in on the bench with calibrate_servo.py) -------
@@ -35,7 +37,7 @@ import wrist_kinematics as wk  # noqa: E402
 #   channel        PCA9685 channel 0-15.
 #   neutral_pulse  pulse with the wrist sitting straight (0 deg / 0 deg) and
 #                  this servo's tendon just snug -- not slack, not straining.
-#   reel_in_sign   +1 if a LARGER pulse winds the string in, -1 if a smaller
+#   reel_in_sign   +1 if a LARGER pulse winds the stri                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            c ng in, -1 if a smaller
 #                  one does. Depends on which way the servo is mounted.
 #   min/max_pulse  hard limits for this servo: jog until the wrist reaches its
 #                  mechanical stop, then back off a little. The defaults are
@@ -123,6 +125,7 @@ class ServoBus:
         self.dry_run = dry_run
         self.pca = None
         self.last = {}
+        self.sim = None    # optional PoseSender; set from --sim-ip
         if not dry_run:
             from adafruit_extended_bus import ExtendedI2C as I2C
             from adafruit_pca9685 import PCA9685
@@ -136,6 +139,11 @@ class ServoBus:
         self.last[channel] = pulse
         if not self.dry_run:
             self.pca.channels[channel].duty_cycle = pulse
+
+    def publish(self, dev_deg, flex_deg):
+        """Tell the sim, if one is listening, what the wrist was just commanded to do."""
+        if self.sim:
+            self.sim.send(dev_deg, flex_deg)
 
     def release(self):
         """Stop pulsing every channel we used -- the servos go limp."""
@@ -158,7 +166,9 @@ def ease_wrist(bus, start, end, seconds=EASE_SECONDS):
     steps = max(1, int(seconds * CONTROL_HZ))
     for k in range(1, steps + 1):
         s = smooth(k / steps)
-        write_wrist(bus, start[0] + (end[0] - start[0]) * s, start[1] + (end[1] - start[1]) * s)
+        dev, flex = start[0] + (end[0] - start[0]) * s, start[1] + (end[1] - start[1]) * s
+        write_wrist(bus, dev, flex)
+        bus.publish(dev, flex)
         if not bus.dry_run:
             time.sleep(1.0 / CONTROL_HZ)
 
@@ -218,6 +228,10 @@ def main():
                         help="drive only the four wrist servos (bench test before the fingers are wired)")
     parser.add_argument("--hold", action="store_true",
                         help="on stop, park the wrist at neutral and keep holding it instead of going limp")
+    parser.add_argument("--sim-ip",
+                        help="stream wrist commands to the computer running mvmnt_demo.py --follow "
+                             "(127.0.0.1 if it's this computer)")
+    parser.add_argument("--sim-port", type=int, default=DEFAULT_PORT, help="UDP port for --sim-ip")
     args = parser.parse_args()
     if args.speed <= 0:
         parser.error("--speed must be > 0")
@@ -239,6 +253,12 @@ def main():
     demand_report(schedule, args.speed)
 
     bus = ServoBus(dry_run=args.dry_run)
+    if args.sim_ip:
+        try:
+            bus.sim = PoseSender(args.sim_ip, args.sim_port)
+            print(f"[servo] streaming wrist commands to {bus.sim.addr[0]}:{args.sim_port}")
+        except OSError as e:
+            print(f"[servo] can't reach sim address {args.sim_ip} ({e}); continuing without the sim.")
     dev, flex = 0.0, 0.0
 
     try:
@@ -256,6 +276,7 @@ def main():
         if calibrated:
             ease_wrist(bus, (0.0, 0.0), ready)
         dev, flex = ready
+        bus.publish(dev, flex)
 
         period = 1.0 / CONTROL_HZ
         start = time.perf_counter()
@@ -269,6 +290,7 @@ def main():
             dev, flex, index = wrist_at(schedule, song_t)
             if calibrated:
                 pulses = write_wrist(bus, dev, flex)
+            bus.publish(dev, flex)
 
             if args.dry_run and index > reported:
                 direction = schedule[index][1] if index >= 0 else "-"
