@@ -6,7 +6,7 @@ those commands, so the screen and the real hand play from one timeline.
 UDP is used on purpose: sending never waits for the sim, and a lost packet is
 replaced by the next one 20 ms later. The servos must never depend on the sim.
 
-Commands only: the MG90S reports no position, so the sim shows where the wrist
+Commands only: the servos report no position, so the sim shows where the wrist
 was told to go, not where it actually is.
 """
 
