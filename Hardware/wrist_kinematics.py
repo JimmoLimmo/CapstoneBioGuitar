@@ -2,7 +2,7 @@
 
 The CDR's final wrist (parts 301-304) is a ball-and-socket joint on a center
 post, with four arms hanging down from the upper wrist piece. Each arm is tied
-to a tendon that runs down to a spool horn on one of four MG90S servos. Two
+to a tendon that runs down to a spool horn on one of four HPS-0618SG servos. Two
 opposite servos make one axis: one reels in while the other pays out.
 
 So a commanded wrist pose is NOT one servo angle per joint. This module turns
@@ -31,14 +31,17 @@ import math
 
 # --- geometry (TODO: measure from the CAD / the printed parts) -------------
 # Every number here is a PLACEHOLDER sized from the CDR drawing (0.75 in wrist,
-# MG90S round horns). Get the real values from the 301/302/303 CAD files.
+# servo horns). Get the real values from the 301/302/303 CAD files.
 ARM_RADIUS_MM = 15.0       # horizontal distance from ball center to each arm's tendon tie point
 ARM_DROP_MM = 10.0         # how far BELOW the ball center those tie points sit
 ANCHOR_RADIUS_MM = 15.0    # horizontal distance from the post to where each tendon leaves its spool/guide
 ANCHOR_DROP_MM = 60.0      # how far below the ball center that exit point is
-SPOOL_RADIUS_MM = 10.0     # radius the tendon wraps on (MG90S round horn groove)
+SPOOL_RADIUS_MM = 10.0     # radius the tendon wraps on (re-measure on the HPS-0618SG horn/spool)
 
-MG90S_RATED_DEG_PER_S = 600.0   # ~0.1 s/60 deg at 4.8 V, no load (CDR "Required Wrist Speed")
+# Hiwonder HPS-0618SG: <=0.06 s/60 deg at 8.4 V, no load (~1000 deg/s); 500-2500 us
+# over 180 deg; 6 kg.cm and <=2.5 A stall at 8.4 V. Was the MG90S (~600 deg/s).
+SERVO_NAME = "HPS-0618SG"
+SERVO_RATED_DEG_PER_S = 1000.0
 
 # Which side each servo's tendon is on. A servo is named for the direction it
 # PULLS the wrist: "dev_pos" reeling in moves the wrist toward +deviation.
@@ -111,7 +114,7 @@ def profile(schedule, wrist_at, step=0.002):
 
     Returns {servo_name: (min_deg, max_deg, peak_deg_per_s)} -- the travel each
     servo needs and the fastest it ever has to turn. Independent of the
-    control loop rate, so it shows the true demand on the MG90S."""
+    control loop rate, so it shows the true demand on the servos."""
     if not schedule:
         return {}
     end = schedule[-1][0] + schedule[-1][2] + schedule[-1][3]
@@ -145,8 +148,8 @@ def _report():
     ratio = abs(servo_angles(1.0, 0.0)["dev_pos"])
     print(f"\nServo turns ~{ratio:.2f} deg per wrist deg near neutral (≈ arm radius / spool radius).")
     print(f"CDR strike needs ~563 deg/s at the wrist -> ~{563 * ratio:.0f} deg/s at the servo "
-          f"(MG90S rated ~{MG90S_RATED_DEG_PER_S:.0f} deg/s, no load).")
-    if 563 * ratio > MG90S_RATED_DEG_PER_S:
+          f"({SERVO_NAME} rated ~{SERVO_RATED_DEG_PER_S:.0f} deg/s, no load).")
+    if 563 * ratio > SERVO_RATED_DEG_PER_S:
         print("  -> over the rating. A larger spool radius (or tie points closer to the ball) trades "
               "torque for speed; otherwise lengthen STRIKE_DURATION.")
 
