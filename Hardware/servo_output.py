@@ -140,10 +140,10 @@ class ServoBus:
         self.last = {}
         self.sim = None    # optional PoseSender; set from --sim-ip
         if not dry_run:
-            from adafruit_extended_bus import ExtendedI2C as I2C
             from adafruit_pca9685 import PCA9685
+            from i2c_bus import open_bus
 
-            i2c = I2C(I2C_BUS)
+            i2c = open_bus(I2C_BUS)
             for name in boards:
                 try:
                     pca = PCA9685(i2c, address=BOARDS[name])
