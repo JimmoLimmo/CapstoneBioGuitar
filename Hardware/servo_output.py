@@ -84,7 +84,10 @@ PULSE_ABS_MAX = 8191
 I2C_BUS = 7            # pins 3/5 on the Orin Nano -- confirm with: sudo i2cdetect -y -r 7
 BOARDS = {
     "lv": 0x41,        # PCA9685 #1, 5 V servo group (relay K1)
-    "hv": 0x42,        # PCA9685 #2, 8.4 V servo group (relay K2) -- the wrist
+    # TEMPORARY: the address pads aren't bridged yet, so both boards are still at
+    # the default 0x40 and BOTH get every command. Change back to 0x42 once the
+    # 8.4 V board's A1 pad is bridged (and the 5 V board's A0 for 0x41).
+    "hv": 0x40,        # PCA9685 #2, 8.4 V servo group (relay K2) -- the wrist
 }
 PWM_FREQUENCY = 50
 CONTROL_HZ = 50        # one update per PWM frame; faster wouldn't reach the servos
