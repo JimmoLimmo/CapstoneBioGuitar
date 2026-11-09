@@ -32,6 +32,31 @@ PIN_ESTOP = 15    # LOW = released, HIGH = pressed / cable cut (10k pull-up to p
 DEBOUNCE_S = 0.05
 
 
+def _resolve_pins(GPIO):
+    """Return (k1, k2, estop) channel ids in whatever numbering mode Jetson.GPIO is in.
+
+    Adafruit Blinka (which the PCA9685 driver uses for I2C) imports Jetson.GPIO
+    and locks it to TEGRA_SOC mode, and Jetson.GPIO refuses a second setmode().
+    So import Blinka first, then name the same header pins in its mode.
+    """
+    try:
+        import board  # Blinka: sets Jetson.GPIO to its own mode on import
+    except Exception:
+        board = None
+    mode = GPIO.getmode()
+    if mode is None:
+        GPIO.setmode(GPIO.BOARD)
+        mode = GPIO.BOARD
+    if mode == GPIO.BOARD:
+        return PIN_K1, PIN_K2, PIN_ESTOP
+    if mode == GPIO.BCM:
+        return 4, 17, 22          # header pins 7, 11, 15
+    if board is None:
+        raise RuntimeError(f"Jetson.GPIO is in mode {mode} and Blinka isn't available to name the pins")
+    # Blinka names header pins like a Raspberry Pi: pin 7 = D4, pin 11 = D17, pin 15 = D22.
+    return board.D4.id, board.D17.id, board.D22.id
+
+
 class EStop(Exception):
     """Raised by PowerBox.check() once the E-stop has tripped."""
 
@@ -51,12 +76,13 @@ class PowerBox:
         import Jetson.GPIO as GPIO
         self.GPIO = GPIO
         GPIO.setwarnings(False)
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(PIN_K1, GPIO.OUT, initial=GPIO.HIGH)
-        GPIO.setup(PIN_K2, GPIO.OUT, initial=GPIO.HIGH)
+        self.k1, self.k2, self.estop = _resolve_pins(GPIO)
+        GPIO.setup(self.k1, GPIO.OUT, initial=GPIO.HIGH)
+        GPIO.setup(self.k2, GPIO.OUT, initial=GPIO.HIGH)
         # Jetson.GPIO cannot enable internal pull-ups on the Orin; this relies on
         # the external 10k to pin 17. If that resistor is missing, pin 15 floats.
-        GPIO.setup(PIN_ESTOP, GPIO.IN)
+        GPIO.setup(self.estop, GPIO.IN)
+        print(f"[power] header pins 7 / 11 / 15 = GPIO {self.k1} / {self.k2} / {self.estop}")
 
         atexit.register(self.close)
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -71,14 +97,14 @@ class PowerBox:
         """True only if pin 15 stays HIGH for the whole debounce window."""
         end = time.monotonic() + DEBOUNCE_S
         while time.monotonic() < end:
-            if self.GPIO.input(PIN_ESTOP) == self.GPIO.LOW:
+            if self.GPIO.input(self.estop) == self.GPIO.LOW:
                 return False
             time.sleep(0.005)
         return True
 
     def _watch(self):
         while not self.tripped.is_set() and not self._closed:
-            if self.GPIO.input(PIN_ESTOP) == self.GPIO.HIGH and self._estop_pressed():
+            if self.GPIO.input(self.estop) == self.GPIO.HIGH and self._estop_pressed():
                 self._go_safe("E-stop pressed. Relays off, PWM off. Restart the script to re-arm.")
                 return
             time.sleep(0.005)
@@ -86,8 +112,8 @@ class PowerBox:
     # --- states -----------------------------------------------------------------
     def relays_off(self):
         if self.GPIO is not None:
-            self.GPIO.output(PIN_K1, self.GPIO.HIGH)
-            self.GPIO.output(PIN_K2, self.GPIO.HIGH)
+            self.GPIO.output(self.k1, self.GPIO.HIGH)
+            self.GPIO.output(self.k2, self.GPIO.HIGH)
 
     def _pwm_off(self):
         if self.on_safe:
@@ -130,8 +156,8 @@ class PowerBox:
         input("[power] Press Enter to ARM (Ctrl-C to quit)... ")
         self.check()
         write_home()
-        self.GPIO.output(PIN_K1, self.GPIO.LOW)
-        self.GPIO.output(PIN_K2, self.GPIO.LOW)
+        self.GPIO.output(self.k1, self.GPIO.LOW)
+        self.GPIO.output(self.k2, self.GPIO.LOW)
         self.state = "ARMED"
         print("[power] ARMED. Press the physical RESET button on the box; the relays should click.")
         input("[power] Press Enter here once servo power is on... ")
@@ -148,7 +174,7 @@ class PowerBox:
             # cleanup() only for the E-stop input; the relay pins are left as
             # driven-HIGH outputs rather than released to float.
             try:
-                self.GPIO.cleanup(PIN_ESTOP)
+                self.GPIO.cleanup(self.estop)
             except Exception:
                 pass
 
