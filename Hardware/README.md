@@ -173,9 +173,8 @@ so the sim and the real hand use the same ones.
 4. `sudo python3 Hardware/pick_up.py` runs the hand-off grip and holds it so
    you can tug the pick.
 
-While both PCA9685 boards are still at 0x40, every command reaches both
-boards. The scripts refuse to run if a finger and a wrist servo use the same
-channel number in that state.
+Addresses (REV 3): the 5 V finger board ("lv") is 0x40, the 8.4 V wrist board
+("hv", A0 bridged) is 0x41. Check with `sudo i2cdetect -y -r 7`.
 
 ## Tests
 

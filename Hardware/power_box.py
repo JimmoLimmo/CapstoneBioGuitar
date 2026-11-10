@@ -30,6 +30,7 @@ With dry_run=True nothing is touched and no Jetson libraries are needed.
 """
 
 import atexit
+import os
 import signal
 import sys
 import threading
@@ -242,7 +243,15 @@ class PowerBox:
             return
         print("[power] WAIT: servo signals off. Strings OK? Hands clear? E-stop within reach?")
         print("[power] Servo power is hardware: press RESET on the box if the SERVO LED is off.")
-        input("[power] Press Enter to ARM (Ctrl-C to quit)... ")
+        auto = os.environ.get("POWERBOX_AUTO_ARM")
+        if auto:
+            # No keyboard needed: count down, E-stop or Ctrl-C still stops it.
+            secs = max(3, int(float(auto)))
+            for n in range(secs, 0, -1):
+                print(f"[power] Arming in {n} s (E-stop or Ctrl-C to cancel)...", flush=True)
+                self.sleep(1.0)
+        else:
+            input("[power] Press Enter to ARM (Ctrl-C to quit)... ")
         self.check()
         write_home()
         self.GPIO.output(self.oe, self.GPIO.LOW)

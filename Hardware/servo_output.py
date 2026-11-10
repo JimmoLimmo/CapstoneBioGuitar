@@ -42,7 +42,7 @@ from power_box import EStop, PowerBox  # noqa: E402
 # The marionette wrist has four Hiwonder HPS-0618SG servos (6-8.4 V, 2.5 A
 # stall) on the 8.4 V board, two per axis. Names say which
 # way that servo PULLS the wrist when it reels in (see wrist_kinematics.py).
-#   board          which PCA9685: "hv" = 8.4 V board (0x42), "lv" = 5 V board (0x41).
+#   board          which PCA9685: "hv" = 8.4 V board (0x41), "lv" = 5 V board (0x40).
 #   channel        PCA9685 channel 0-15 on that board.
 #   neutral_pulse  pulse with the wrist sitting straight (0 deg / 0 deg) and
 #                  this servo's tendon just snug -- not slack, not straining.
@@ -80,11 +80,10 @@ PULSE_ABS_MAX = 8191
 
 I2C_BUS = 7            # pins 3/5 on the Orin Nano -- confirm with: sudo i2cdetect -y -r 7
 BOARDS = {
-    "lv": 0x41,        # PCA9685 #1, 5 V servo group (relay K1)
-    # TEMPORARY: the address pads aren't bridged yet, so both boards are still at
-    # the default 0x40 and BOTH get every command. Change back to 0x42 once the
-    # 8.4 V board's A1 pad is bridged (and the 5 V board's A0 for 0x41).
-    "hv": 0x40,        # PCA9685 #2, 8.4 V servo group (relay K2) -- the wrist
+    # REV 3 wiring sheets (confirmed on the box 2026-11-10: the 0x40 board's V+
+    # reads 5 V). Board #1 has no pads bridged; board #2 has A0 bridged.
+    "lv": 0x40,        # PCA9685 #1, 5 V servo group (relay K1) -- the fingers
+    "hv": 0x41,        # PCA9685 #2, 8.4 V servo group (relay K2) -- the wrist
 }
 PWM_FREQUENCY = 50
 CONTROL_HZ = 50        # one update per PWM frame; faster wouldn't reach the servos

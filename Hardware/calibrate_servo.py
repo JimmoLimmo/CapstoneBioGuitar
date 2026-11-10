@@ -3,7 +3,7 @@
 Raw mode -- jog ONE channel to typed pulse values (finding neutral_pulse,
 reel_in_sign and min/max_pulse for each wrist servo):
     sudo python3 Hardware/calibrate_servo.py <channel 0-15> [hv|lv]
-    (hv = 8.4 V board at 0x42, the default; lv = 5 V board at 0x41)
+    (hv = 8.4 V board at 0x41, the default; lv = 5 V board at 0x40)
 
 Wrist mode -- once all four WRIST_SERVOS entries in servo_output.py are filled
 in, type wrist angles and all four servos move together through the tendon
