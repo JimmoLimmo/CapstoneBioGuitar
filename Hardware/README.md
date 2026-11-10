@@ -173,8 +173,8 @@ so the sim and the real hand use the same ones.
 4. `sudo python3 Hardware/pick_up.py` runs the hand-off grip and holds it so
    you can tug the pick.
 
-Addresses (REV 3): the 5 V finger board ("lv") is 0x40, the 8.4 V wrist board
-("hv", A0 bridged) is 0x41. Check with `sudo i2cdetect -y -r 7`.
+Addresses (as wired on the box): the 8.4 V wrist board ("hv") is 0x40, the
+5 V finger board ("lv") is 0x41. The REV 3 sheets show them the other way round. Check with `sudo i2cdetect -y -r 7`.
 
 ## Tests
 
