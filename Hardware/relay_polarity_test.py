@@ -1,4 +1,7 @@
-"""Find out which Jetson pin state turns the relays on with the current wiring.
+"""ONLY for the alternative "Jetson-switched relay" rewire. Not used with the
+REV 3 wiring sheets (there the relays have no Jetson wires).
+
+Find out which Jetson pin state turns the relays on with the current wiring.
 
 Tries three states on header pins 7 and 11 (IN1 / IN2) and asks you to press
 RESET after each one. At the end it tells you which RELAY_MODE to set in

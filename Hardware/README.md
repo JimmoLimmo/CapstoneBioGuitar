@@ -11,6 +11,9 @@ Quick map of the scripts:
 | `calibrate_servo.py`, `test_one_servo.py` | Bench tools for one servo / the wrist. |
 | `hand_control.py`, `fingers.py`, `power_box.py`, `wrist_kinematics.py` | Shared code the scripts above use. |
 
+From the repo root, `python3 run.py [console|song|pick|test] ...` opens the sim
+and runs the hand together (run it without sudo; it asks for the password).
+
 Every script takes `--dry-run` (no hardware needed) and `--sim-ip` (show the
 commands live in the sim). The wrist section below was written first; the
 finger sections are near the end.
@@ -60,26 +63,28 @@ position. It also uses the generic MPL hand, so it stops at that model's wrist
 limit (about -15 deg) when the command goes to -20 deg. If the sim stops, the
 servos keep running.
 
-## Power box (relays and E-stop)
+## Power box (REV 3 wiring sheets 0-5)
 
-Servo power comes from the electrical box, not straight from the supplies.
-`power_box.py` handles it for every script:
+Servo power is switched in hardware only: RESET latches the relay coils
+(D1 seal-in from K1 NO), and the E-stop (NC1), TH1, F3 or MAIN drop them.
+IN1/IN2 are tied to GND; there are no Jetson wires to the relay board.
+`power_box.py` handles the Jetson side for every script:
 
 | Jetson pin | Use |
 | --- | --- |
-| 7 (out) | relay IN1, K1 = 5 V servo power and master hold. Active LOW. |
-| 11 (out) | relay IN2, K2 = 8.4 V servo power. Active LOW. |
-| 15 (in) | E-stop: LOW = released, HIGH = pressed or cable cut |
-| 3 / 5 | I2C bus 7: PCA9685 `lv` at 0x41 (5 V group), `hv` at 0x42 (8.4 V group, the wrist) |
+| 31 (out) | OE of both PCA9685. HIGH = all servo signals off (R5 10k pull-up holds it HIGH at boot / crash). |
+| 15 (in) | E-stop NC2: LOW = released, HIGH = pressed or cable cut (R4 10k pull-up to pin 17). |
+| 1 / 3 / 5 / 9 | I2C bus 7 to both PCA9685 (VCC, SDA, SCL, GND). |
 
 Every script that moves a servo:
-1. starts with pins 7 and 11 HIGH (relays off);
+1. starts with OE HIGH (signals off);
 2. refuses to start if the E-stop is pressed;
-3. waits for you to press Enter, writes the home pulses, then sets 7 and 11 LOW;
-4. asks you to press the box's RESET button (servo power only comes on then);
-5. drops to SAFE (relays off, PWM off) the instant the E-stop is pressed, and
+3. waits for you to press Enter, writes the home pulses, then sets OE LOW;
+4. servo power itself comes from the box: press RESET if the SERVO LED is off;
+5. drops to SAFE (OE HIGH, PWM off) the instant the E-stop is pressed, and
    never re-arms by itself; start the script again;
-6. turns the relays off on every exit: end of run, Ctrl-C, SIGTERM or a crash.
+6. sets OE HIGH and turns the PWM off on every exit: end of run, Ctrl-C,
+   SIGTERM or a crash.
 
 Run them with `sudo` on the Jetson (GPIO and I2C access). Needs
 `Jetson.GPIO`, `adafruit-circuitpython-pca9685` and `adafruit-extended-bus`.
@@ -89,11 +94,8 @@ Quick wiring check, no calibration needed:
     sudo python3 Hardware/test_one_servo.py 13        # channel 13, 8.4 V board
     sudo python3 Hardware/test_one_servo.py 3 lv      # channel 3, 5 V board
 
-Not done yet: the box's rules also ask for a boot-time service that holds
-pins 7 and 11 HIGH before any script runs, and for the relays to be set off
-before the Jetson shuts down. A service that holds the pins would block the
-scripts from using them, so this needs either pull-up resistors on IN1/IN2
-or one long-running process that owns the pins.
+Boot / shutdown: R5 holds OE HIGH whenever the Jetson isn't driving pin 31,
+so servo signals stay off at boot, after a script exits and with the Jetson off.
 
 ## Why there's a kinematics step
 
