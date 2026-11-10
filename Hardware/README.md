@@ -200,9 +200,10 @@ a reading that is one frame off already uses a third of the +/-10% allowance.
 - Refuses to move anything if any wrist servo is missing its channel or neutral
   pulse, or if two servos share a channel.
 - Eases from straight into the first ready pose, so there's no jump at start-up.
-- At the end of a run it eases back to neutral, then turns the relays off and
-  releases the PWM outputs. On Ctrl-C or an E-stop it turns the relays off
-  straight away. `--hold` was removed: the relays must go off on every exit.
+- At the end of a run it eases back to neutral, then turns the servo signals
+  off (OE HIGH) and releases the PWM outputs. On Ctrl-C or an E-stop it turns
+  the signals off straight away. `--hold` was removed: signals must go off on
+  every exit.
 - The hardware E-stop is still the real safety. None of the above replaces it.
 
 ## Strike speed

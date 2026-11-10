@@ -5,10 +5,11 @@
     python Hardware/servo_output.py                    # full hand (fingers grip the pick first), real speed
     python Hardware/servo_output.py --wrist-only --sim-ip 192.168.1.20   # also stream to mvmnt_demo.py --follow
 
-Servo power goes through the electrical box (see power_box.py): the script
-starts with both relays OFF, asks you to press Enter to arm, then you press
-the box's RESET button. The E-stop drops everything to SAFE at any time, and
-the relays turn OFF on every exit. Run on the Jetson with sudo (GPIO access).
+Servo power is switched by the electrical box in hardware (press RESET on the
+box). The script starts with the servo signals OFF (PCA9685 OE, pin 31, HIGH),
+asks you to press Enter to arm, then turns them on. The E-stop drops everything
+to SAFE at any time, and the signals turn OFF on every exit (see power_box.py).
+Run on the Jetson with the `servo` alias (sudo, for GPIO and I2C access).
 
 Every tick (50 Hz):
     strum_motion.wrist_at(t)          -> (deviation_deg, flexion_deg)
@@ -42,7 +43,7 @@ from power_box import EStop, PowerBox  # noqa: E402
 # The marionette wrist has four Hiwonder HPS-0618SG servos (6-8.4 V, 2.5 A
 # stall) on the 8.4 V board, two per axis. Names say which
 # way that servo PULLS the wrist when it reels in (see wrist_kinematics.py).
-#   board          which PCA9685: "hv" = 8.4 V board (0x42), "lv" = 5 V board (0x41).
+#   board          which PCA9685: "hv" = 8.4 V board (0x40), "lv" = 5 V board (0x41).
 #   channel        PCA9685 channel 0-15 on that board.
 #   neutral_pulse  pulse with the wrist sitting straight (0 deg / 0 deg) and
 #                  this servo's tendon just snug -- not slack, not straining.
@@ -51,11 +52,15 @@ from power_box import EStop, PowerBox  # noqa: E402
 #   min/max_pulse  hard limits for this servo: jog until the wrist reaches its
 #                  mechanical stop, then back off a little. The defaults are
 #                  deliberately narrow.
+# Sides: North = back of hand = flex_pos (ch 12), South = palm = flex_neg (ch 13),
+# pinky side = dev_pos (ch 10), thumb side = dev_neg (ch 11).
+# +deviation is ulnar (wrist_UDEV, toward the pinky), so the pinky-side servo
+# is dev_pos. calibrate_servo.py --wrist confirms; swap if backwards.
 WRIST_SERVOS = {
-    "dev_pos":  {"board": "hv", "channel": None, "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "dev_neg":  {"board": "hv", "channel": None, "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "flex_pos": {"board": "hv", "channel": None, "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "flex_neg": {"board": "hv", "channel": None, "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "dev_pos":  {"board": "hv", "channel": 10,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "dev_neg":  {"board": "hv", "channel": 11,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "flex_pos": {"board": "hv", "channel": 12,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "flex_neg": {"board": "hv", "channel": 13,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
 }
 
 # 500-2500 us over ~180 deg (the CDR servo test bench range; check the HPS-0618SG
@@ -80,11 +85,9 @@ PULSE_ABS_MAX = 8191
 
 I2C_BUS = 7            # pins 3/5 on the Orin Nano -- confirm with: sudo i2cdetect -y -r 7
 BOARDS = {
-    "lv": 0x41,        # PCA9685 #1, 5 V servo group (relay K1)
-    # TEMPORARY: the address pads aren't bridged yet, so both boards are still at
-    # the default 0x40 and BOTH get every command. Change back to 0x42 once the
-    # 8.4 V board's A1 pad is bridged (and the 5 V board's A0 for 0x41).
-    "hv": 0x40,        # PCA9685 #2, 8.4 V servo group (relay K2) -- the wrist
+    # As wired on the box (checked 2026-11-10 with i2cdetect: 40 and 41).
+    "lv": 0x41,        # 5 V finger board (relay K1)
+    "hv": 0x40,        # 8.4 V wrist board (relay K2)
 }
 PWM_FREQUENCY = 50
 CONTROL_HZ = 50        # one update per PWM frame; faster wouldn't reach the servos
@@ -372,8 +375,8 @@ def main():
         print("\n[servo] interrupted.")
     finally:
         # On a normal finish, ease back to neutral while power is still on.
-        # On an E-stop or Ctrl-C the relays are already off, so skip straight to
-        # the shutdown. Every path ends with relays OFF and PWM off.
+        # On an E-stop or Ctrl-C the signals are already off, so skip straight to
+        # the shutdown. Every path ends with signals OFF and PWM off.
         if calibrated and power.state == "ARMED" and not power.tripped.is_set() and not power.closed:
             try:
                 ease_wrist(bus, (dev, flex), (0.0, 0.0), power=power)
@@ -381,7 +384,7 @@ def main():
                 print(f"[servo] could not park the wrist ({e})")
         power.close()
         bus.release()
-        print("[servo] stopped -- relays off, servos released.")
+        print("[servo] stopped -- signals off, servos released.")
 
 
 if __name__ == "__main__":
