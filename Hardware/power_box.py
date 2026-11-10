@@ -3,15 +3,16 @@
 Every script that moves a servo goes through this module, so the box's
 software rules live in one place:
 
-  * Relays start OFF: pins 7 (IN1, K1) and 11 (IN2, K2) are driven HIGH the
-    moment a PowerBox is created. Both are ACTIVE LOW.
+  * Relays start OFF: pins 7 (IN1, K1) and 11 (IN2, K2) are put in the OFF
+    state the moment a PowerBox is created. Which pin state means ON is set by
+    RELAY_MODE below (run relay_polarity_test.py to find it).
   * Pin 15 reads the E-stop: LOW = released, HIGH = pressed or cable cut.
     Debounced ~50 ms. A watcher thread drops to SAFE the instant it goes HIGH.
   * States: SAFE (E-stop pressed) -> WAIT (released, not armed) -> ARMED
-    (operator pressed Enter; home pulses written FIRST, then IN1 = IN2 = LOW).
+    (operator pressed Enter; home pulses written FIRST, then both relays ON).
     Servo power still only appears when someone presses the physical RESET.
   * No automatic re-arm after an E-stop: the script has to be started again.
-  * Any exit -- normal, Ctrl-C, SIGTERM, exception -- sets IN1 = IN2 = HIGH
+  * Any exit -- normal, Ctrl-C, SIGTERM, exception -- turns both relays OFF
     and turns the PWM outputs off.
 
 The hardware (E-stop, thermostat, fuse) is still what actually cuts power.
@@ -26,10 +27,55 @@ import sys
 import threading
 import time
 
-PIN_K1 = 7        # relay IN1: 5 V servo power + master hold (seal-in). ACTIVE LOW.
-PIN_K2 = 11       # relay IN2: 8.4 V servo power. ACTIVE LOW.
+PIN_K1 = 7        # relay IN1: 5 V servo power + master hold (seal-in).
+PIN_K2 = 11       # relay IN2: 8.4 V servo power.
 PIN_ESTOP = 15    # LOW = released, HIGH = pressed / cable cut (10k pull-up to pin 17)
 DEBOUNCE_S = 0.05
+
+# Which Jetson pin state turns a relay ON with the box's current wiring.
+# Run `sudo python3 Hardware/relay_polarity_test.py` to find out, then set this.
+#   "active_low"  : pin LOW = ON,  pin HIGH = OFF  (original design)
+#   "active_high" : pin HIGH = ON, pin LOW = OFF
+#   "release_on"  : pin released (input) = ON, pin HIGH = OFF. Used when the
+#                   Jetson can't pull the inputs low hard enough. The relays can
+#                   then also come on whenever no script holds the pins (boot,
+#                   after exit) until a pull-up or transistor is added.
+RELAY_MODE = "active_low"
+_MODES = ("active_low", "active_high", "release_on")
+
+
+def _check_mode():
+    if RELAY_MODE not in _MODES:
+        raise ValueError(f"RELAY_MODE must be one of {_MODES}, not {RELAY_MODE!r}")
+
+
+def relay_off_level(GPIO):
+    """The level to drive a relay pin to for OFF."""
+    _check_mode()
+    return GPIO.LOW if RELAY_MODE == "active_high" else GPIO.HIGH
+
+
+def _drive(GPIO, pin, level):
+    try:
+        GPIO.output(pin, level)
+    except Exception:          # pin was released (input): claim it as an output again
+        GPIO.setup(pin, GPIO.OUT, initial=level)
+
+
+def relay_off(GPIO, pin):
+    _drive(GPIO, pin, relay_off_level(GPIO))
+
+
+def relay_on(GPIO, pin):
+    _check_mode()
+    if RELAY_MODE == "release_on":
+        try:
+            GPIO.cleanup(pin)
+        except Exception:
+            pass
+        GPIO.setup(pin, GPIO.IN)
+    else:
+        _drive(GPIO, pin, GPIO.HIGH if RELAY_MODE == "active_high" else GPIO.LOW)
 
 
 def _resolve_pins(GPIO):
@@ -77,12 +123,14 @@ class PowerBox:
         self.GPIO = GPIO
         GPIO.setwarnings(False)
         self.k1, self.k2, self.estop = _resolve_pins(GPIO)
-        GPIO.setup(self.k1, GPIO.OUT, initial=GPIO.HIGH)
-        GPIO.setup(self.k2, GPIO.OUT, initial=GPIO.HIGH)
+        off = relay_off_level(GPIO)
+        GPIO.setup(self.k1, GPIO.OUT, initial=off)
+        GPIO.setup(self.k2, GPIO.OUT, initial=off)
         # Jetson.GPIO cannot enable internal pull-ups on the Orin; this relies on
         # the external 10k to pin 17. If that resistor is missing, pin 15 floats.
         GPIO.setup(self.estop, GPIO.IN)
-        print(f"[power] header pins 7 / 11 / 15 = GPIO {self.k1} / {self.k2} / {self.estop}")
+        print(f"[power] header pins 7 / 11 / 15 = GPIO {self.k1} / {self.k2} / {self.estop}"
+              f"  (RELAY_MODE = {RELAY_MODE})")
 
         atexit.register(self.close)
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -112,8 +160,8 @@ class PowerBox:
     # --- states -----------------------------------------------------------------
     def relays_off(self):
         if self.GPIO is not None:
-            self.GPIO.output(self.k1, self.GPIO.HIGH)
-            self.GPIO.output(self.k2, self.GPIO.HIGH)
+            relay_off(self.GPIO, self.k1)
+            relay_off(self.GPIO, self.k2)
 
     def _pwm_off(self):
         if self.on_safe:
@@ -156,8 +204,8 @@ class PowerBox:
         input("[power] Press Enter to ARM (Ctrl-C to quit)... ")
         self.check()
         write_home()
-        self.GPIO.output(self.k1, self.GPIO.LOW)
-        self.GPIO.output(self.k2, self.GPIO.LOW)
+        relay_on(self.GPIO, self.k1)
+        relay_on(self.GPIO, self.k2)
         self.state = "ARMED"
         print("[power] ARMED. Press the physical RESET button on the box; the relays should click.")
         input("[power] Press Enter here once servo power is on... ")
@@ -171,8 +219,8 @@ class PowerBox:
         self.relays_off()
         self._pwm_off()
         if self.GPIO is not None:
-            # cleanup() only for the E-stop input; the relay pins are left as
-            # driven-HIGH outputs rather than released to float.
+            # cleanup() only for the E-stop input; the relay pins are left
+            # driven to OFF rather than released to float.
             try:
                 self.GPIO.cleanup(self.estop)
             except Exception:

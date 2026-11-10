@@ -9,6 +9,8 @@ import math
 import os
 import sys
 
+from finger_motion import sim_joints
+
 # song 
 SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
 # SONG_FILE = "Parsing/inputs/DragonForce - Through the Fire and Flames.gp5"
@@ -86,6 +88,28 @@ def fallback_onsets():
     return [i * step for i in range(FALLBACK_STRUMS)]
 
 
+def tempo_onsets(bpm, strokes, beats_per_stroke=0.5):
+    """Evenly spaced onsets: 0.5 beats per stroke = eighth notes (two strums per beat)."""
+    step = 60.0 / bpm * beats_per_stroke
+    return [i * step for i in range(strokes)]
+
+
+def schedule_from_onsets(onsets, directions=None):
+    """Onset times (s) -> schedule; directions cycle per stroke (None = STRUM_DIRECTIONS)."""
+    directions = directions or STRUM_DIRECTIONS
+    schedule = []
+    for i, onset in enumerate(onsets):
+        budget = (onsets[i + 1] - onset) if i + 1 < len(onsets) else STRIKE_DURATION + RECOVER_DURATION
+        strike = min(STRIKE_DURATION, budget * 0.5)
+        schedule.append((
+            onset,
+            directions[i % len(directions)],
+            strike,
+            min(RECOVER_DURATION, budget - strike),
+        ))
+    return schedule
+
+
 def build_schedule():
     onsets, source = [], f"{BPM} BPM fallback"
     if SONG_FILE:
@@ -113,17 +137,7 @@ def build_schedule():
         print("[strum] using the constant-tempo fallback instead.")
         onsets = fallback_onsets()
 
-    schedule = []
-    for i, onset in enumerate(onsets):
-        budget = (onsets[i + 1] - onset) if i + 1 < len(onsets) else STRIKE_DURATION + RECOVER_DURATION
-        strike = min(STRIKE_DURATION, budget * 0.5)
-        schedule.append((
-            onset,
-            STRUM_DIRECTIONS[i % len(STRUM_DIRECTIONS)],
-            strike,
-            min(RECOVER_DURATION, budget - strike),
-        ))
-    return schedule, source
+    return schedule_from_onsets(onsets), source
 
 
 # pose
@@ -167,11 +181,13 @@ def wrist_at(schedule, t):
     return start + (end - start) * smooth(u), lift * math.sin(math.pi * u), i
 
 
-def pose(yaw_deg, flex_deg):
-    """Full 16-joint target dict in RADIANS, keyed by MJCF joint name --
-    what the PyBullet sim consumes directly. Kept here so the sim and any
-    future higher-DOF hand still share one source of truth for the grip."""
-    p = {name: d(angle * GRIP_CURL) for name, angle in FIST_POSE.items()}
+def pose(yaw_deg, flex_deg, fingers=None):
+    """Full 16-joint target dict in RADIANS, keyed by MJCF joint name.
+    fingers = a finger_motion pose; None = the default fist."""
+    if fingers is None:
+        p = {name: d(angle * GRIP_CURL) for name, angle in FIST_POSE.items()}
+    else:
+        p = sim_joints(fingers)
     p["wrist_PRO"] = d(WRIST_PRO_BASE_DEG)
     p["wrist_UDEV"] = d(yaw_deg)
     p["wrist_FLEX"] = d(flex_deg)

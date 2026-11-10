@@ -1,7 +1,8 @@
-"""Live wrist-command link between Hardware/servo_output.py and the PyBullet sim.
+"""Live command link between the hand's control scripts and the PyBullet sim.
 
-servo_output.py sends each wrist command over UDP. mvmnt_demo.py --follow shows
-those commands, so the screen and the real hand play from one timeline.
+Each wrist command (plus the finger curls, when in use) is sent over UDP.
+mvmnt_demo.py --follow shows those commands, so the screen and the real hand
+play from one timeline.
 
 UDP is used on purpose: sending never waits for the sim, and a lost packet is
 replaced by the next one 20 ms later. The servos must never depend on the sim.
@@ -15,19 +16,30 @@ import socket
 import time
 from collections import deque
 
+from finger_motion import SERVO_NAMES
+
 DEFAULT_PORT = 5005
 
 
-def encode_pose(run, seq, dev, flex):
-    return json.dumps({"run": run, "seq": seq, "dev": dev, "flex": flex}).encode()
+def encode_pose(run, seq, dev, flex, fingers=None):
+    msg = {"run": run, "seq": seq, "dev": round(dev, 3), "flex": round(flex, 3)}
+    if fingers is not None:
+        msg["f"] = [round(float(fingers.get(name, 0.0)), 3) for name in SERVO_NAMES]
+    return json.dumps(msg).encode()
 
 
 def decode_pose(data):
-    """A pose dict, or None if the packet isn't one of ours."""
+    """A pose dict (fingers = {servo: curl} or None), or None if the packet isn't one of ours."""
     try:
         msg = json.loads(data.decode())
+        fingers = None
+        if msg.get("f") is not None:
+            curls = [max(0.0, min(1.0, float(c))) for c in msg["f"]]
+            if len(curls) != len(SERVO_NAMES):
+                return None
+            fingers = dict(zip(SERVO_NAMES, curls))
         return {"run": int(msg["run"]), "seq": int(msg["seq"]),
-                "dev": float(msg["dev"]), "flex": float(msg["flex"])}
+                "dev": float(msg["dev"]), "flex": float(msg["flex"]), "fingers": fingers}
     except (ValueError, KeyError, TypeError, AttributeError):
         return None
 
@@ -43,10 +55,10 @@ class PoseSender:
         self.seq = 0
         self.warned = False
 
-    def send(self, dev, flex):
+    def send(self, dev, flex, fingers=None):
         self.seq += 1
         try:
-            self.sock.sendto(encode_pose(self.run, self.seq, dev, flex), self.addr)
+            self.sock.sendto(encode_pose(self.run, self.seq, dev, flex, fingers), self.addr)
         except OSError as e:
             if not self.warned:
                 print(f"[sim-link] send failed ({e}); servos keep running, sim may freeze.")
@@ -79,11 +91,11 @@ class PoseFollower:
         self.queue.append((now, msg))
 
     def poll(self, now):
-        """(dev, flex) if a new pose is due, otherwise None."""
+        """(dev, flex, fingers) if a new pose is due, otherwise None."""
         due = None
         while self.queue and self.queue[0][0] <= now - self.delay:
             due = self.queue.popleft()[1]
-        return (due["dev"], due["flex"]) if due else None
+        return (due["dev"], due["flex"], due["fingers"]) if due else None
 
 
 class PoseReceiver:
@@ -96,7 +108,7 @@ class PoseReceiver:
         """Move every waiting packet into the follower."""
         while True:
             try:
-                data, _ = self.sock.recvfrom(512)
+                data, _ = self.sock.recvfrom(2048)
             except OSError:   # nothing waiting
                 return
             msg = decode_pose(data)
