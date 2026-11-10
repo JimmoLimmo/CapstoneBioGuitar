@@ -142,7 +142,7 @@ class Hand:
 
     # --- motions ---------------------------------------------------------------
     def arm(self):
-        """Relays on (after Enter + the box's RESET button) with every servo at home."""
+        """Servo signals on (after Enter; servo power comes from the box's RESET) with every servo at home."""
         def write_home():
             self.wrist_pose = (0.0, 0.0)
             self.finger_pose = dict(fm.OPEN)
@@ -211,7 +211,7 @@ class Hand:
 
     # --- shutdown --------------------------------------------------------------
     def close(self, park=True):
-        """Park (only on a clean finish), then relays off and PWM off. Always safe to call."""
+        """Park (only on a clean finish), then signals off and PWM off. Always safe to call."""
         if park and self.power.state == "ARMED" and not self.power.tripped.is_set() and not self.power.closed:
             try:
                 self.park()
@@ -226,9 +226,9 @@ class Hand:
     def __exit__(self, exc_type, exc, tb):
         self.close(park=exc_type is None)
         if exc_type is EStop:
-            print("[hand] stopped by the E-stop. Relays off. Restart the script to re-arm.")
+            print("[hand] stopped by the E-stop. Signals off. Restart the script to re-arm.")
             return True
         if exc_type is KeyboardInterrupt:
-            print("\n[hand] interrupted. Relays off.")
+            print("\n[hand] interrupted. Signals off.")
             return True
         return False

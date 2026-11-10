@@ -1,2 +1,3 @@
 *.bundle
 Testing/results/dry_run/
+*.bak-*

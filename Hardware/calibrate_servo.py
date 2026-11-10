@@ -10,9 +10,9 @@ in, type wrist angles and all four servos move together through the tendon
 kinematics (checking directions, limits and string tension):
     sudo python3 Hardware/calibrate_servo.py --wrist
 
-Both modes go through the electrical box (power_box.py): relays start OFF,
-press Enter to arm, then press the box's RESET button for servo power.
-The E-stop drops everything at any time; relays go OFF on every exit.
+Both modes go through the electrical box (power_box.py): press RESET on the
+box for servo power, then Enter to arm (servo signals on). The E-stop drops
+everything at any time; signals go OFF on every exit.
 """
 
 import os
@@ -59,7 +59,7 @@ def raw_mode(channel, board):
     finally:
         power.close()
         bus.release()
-        print("[calibrate] relays off, servo released.")
+        print("[calibrate] signals off, servo released.")
 
 
 def wrist_mode():
@@ -111,7 +111,7 @@ def wrist_mode():
     finally:
         power.close()
         bus.release()
-        print("[calibrate] relays off, servos released.")
+        print("[calibrate] signals off, servos released.")
 
 
 def main():
