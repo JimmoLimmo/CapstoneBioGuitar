@@ -1,11 +1,13 @@
 """Wiggle ONE servo to check wiring. No calibration needed.
 
-    sudo python3 Hardware/test_one_servo.py            # channel 0 on the 8.4 V board (0x42)
+    sudo python3 Hardware/test_one_servo.py            # channel 0 on the 8.4 V board (hv, 0x41)
     sudo python3 Hardware/test_one_servo.py 13         # channel 13 on the 8.4 V board
-    sudo python3 Hardware/test_one_servo.py 3 lv       # channel 3 on the 5 V board (0x41)
+    sudo python3 Hardware/test_one_servo.py 3 lv       # channel 3 on the 5 V board (lv, 0x40)
+    sudo python3 Hardware/test_one_servo.py 3 0x40     # same, by I2C address
 
-Goes through the electrical box like everything else: relays start OFF,
-press Enter to arm, press the box's RESET button, then press Enter again.
+Goes through the electrical box like everything else (REV 3): press RESET on
+the box so the SERVO LED is on, then press Enter to arm (servo signals on).
+No keyboard? Run with: sudo env POWERBOX_AUTO_ARM=5 python3 ...
 """
 import os
 import sys
@@ -20,8 +22,13 @@ STEP_S = 1.0
 
 channel = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 board = sys.argv[2] if len(sys.argv) > 2 else "hv"
+if board.lower().startswith("0x"):
+    by_addr = {hex(a): n for n, a in BOARDS.items()}
+    board = by_addr.get(hex(int(board, 16)), board)
 if board not in BOARDS or not 0 <= channel <= 15:
-    sys.exit(__doc__)
+    boards = ", ".join(f"{n} = {hex(a)}" for n, a in BOARDS.items())
+    sys.exit(f"Unknown board '{sys.argv[2] if len(sys.argv) > 2 else board}' or channel {channel}. "
+             f"Use a board name or address ({boards}) and a channel 0-15.\n{__doc__}")
 
 bus = ServoBus(dry_run=False, boards=(board,))
 power = PowerBox(on_safe=bus.release)
@@ -39,4 +46,4 @@ except KeyboardInterrupt:
 finally:
     power.close()
     bus.release()
-    print("done -- relays off, servo released.")
+    print("done -- signals off (OE HIGH), servo released.")
