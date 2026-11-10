@@ -1,9 +1,9 @@
 """Wiggle ONE servo to check wiring. No calibration needed.
 
-    sudo python3 Hardware/test_one_servo.py            # channel 0 on the 8.4 V board (hv, 0x41)
+    sudo python3 Hardware/test_one_servo.py            # channel 0 on the 8.4 V board (hv, 0x40)
     sudo python3 Hardware/test_one_servo.py 13         # channel 13 on the 8.4 V board
-    sudo python3 Hardware/test_one_servo.py 3 lv       # channel 3 on the 5 V board (lv, 0x40)
-    sudo python3 Hardware/test_one_servo.py 3 0x40     # same, by I2C address
+    sudo python3 Hardware/test_one_servo.py 3 lv       # channel 3 on the 5 V board (lv, 0x41)
+    sudo python3 Hardware/test_one_servo.py 3 0x41     # same, by I2C address
 
 Goes through the electrical box like everything else (REV 3): press RESET on
 the box so the SERVO LED is on, then press Enter to arm (servo signals on).

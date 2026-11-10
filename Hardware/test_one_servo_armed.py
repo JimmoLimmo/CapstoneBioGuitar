@@ -5,9 +5,9 @@ OFF (PCA9685 OE, pin 31, HIGH), nothing arms until you press Enter, any E-stop
 drops straight to SAFE, no automatic re-arm, and every exit path sets OE HIGH
 and turns the PWM off. Servo POWER is hardware: press RESET on the box.
 
-    sudo python3 test_one_servo_armed.py                 # channel 0 on 0x41 (8.4 V wrist board)
+    sudo python3 test_one_servo_armed.py                 # channel 0 on 0x41 (5 V finger board)
     sudo python3 test_one_servo_armed.py 13 0x41         # channel 13 on 0x41
-    sudo python3 test_one_servo_armed.py 3 0x40          # channel 3 on 0x40 (5 V finger board)
+    sudo python3 test_one_servo_armed.py 3 0x40          # channel 3 on 0x40 (8.4 V wrist board)
 
 Check which board is at which address first: sudo i2cdetect -y -r 7
 """
