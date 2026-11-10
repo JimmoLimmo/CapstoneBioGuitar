@@ -1,5 +1,20 @@
 # Hardware output (right hand)
 
+Quick map of the scripts:
+
+| Script | What it's for |
+| --- | --- |
+| `hand_console.py` | Type commands to move fingers and wrist. Use this to program the finger poses. |
+| `servo_output.py` | Play the song (wrist strum; fingers grip the pick unless `--wrist-only`). |
+| `pick_up.py` | Get the pick into the hand (hand-off, or from a holder). |
+| `Testing/hand_tests.py` | The CDR test plan: fingertip accuracy, strum repeatability, tempo. |
+| `calibrate_servo.py`, `test_one_servo.py` | Bench tools for one servo / the wrist. |
+| `hand_control.py`, `fingers.py`, `power_box.py`, `wrist_kinematics.py` | Shared code the scripts above use. |
+
+Every script takes `--dry-run` (no hardware needed) and `--sim-ip` (show the
+commands live in the sim). The wrist section below was written first; the
+finger sections are near the end.
+
 Turns the strum choreography into real PCA9685 servo commands for the
 marionette wrist (ball-and-socket joint, four Hiwonder HPS-0618SG servos in two opposing pairs, on the 8.4 V board). 
 Tested only against a fake PCA9685 so far; **no real servo has run this yet.**
@@ -17,8 +32,9 @@ there show up in both.
 
 ## Live sim alongside the hand
 
-The sim can show the same wrist commands the servos receive. Start the sim
-first, on the computer with the screen:
+The sim can show the same commands the servos receive: the wrist angles, and
+the finger curls when the fingers are in use. Start the sim first, on the
+computer with the screen:
 
     python Sim/mvmnt_demo.py --follow
 
@@ -29,6 +45,11 @@ Then start the hand on the Jetson, using the sim computer's IP address:
 To try it with no hardware, run both on one computer:
 
     python Hardware/servo_output.py --dry-run --sim-ip 127.0.0.1
+    python Hardware/hand_console.py --dry-run --sim-ip 127.0.0.1
+
+`hand_console.py`, `pick_up.py` and `Testing/hand_tests.py` take the same
+`--sim-ip`. The Jetson and the sim computer have to be on one network for this
+(a direct Ethernet cable between them works; the Jetson doesn't need internet).
 
 If nothing moves, allow UDP port 5005 through the sim computer's firewall.
 If the sim runs ahead of the hand, measure the gap on video and add it with
@@ -101,8 +122,12 @@ joint-angle/pulse pairs through the linkage.
    CAD. These set how far each servo turns per degree of wrist movement.
 2. **Wrist calibration**: `WRIST_SERVOS` in `servo_output.py` (board, channel,
    neutral_pulse, reel_in_sign, min/max_pulse for each of the 4 servos).
-3. **Grip**: `OTHER_CHANNELS["grip"]` is still one channel. It becomes the 10
-   finger servos once those are wired.
+3. **Finger calibration**: `FINGER_SERVOS` in `fingers.py` (channel, open_pulse,
+   closed_pulse for each of the 10 servos). See "Fingers" below.
+4. **Finger poses**: `PICK_READY` / `PICK_GRIP` in `Sim/finger_motion.py` are
+   starting guesses. Tune them with `hand_console.py`.
+5. **Pick holder**: `HOLDER_WRIST` / `LIFT_WRIST` in `pick_up.py`, only needed
+   for `pick_up.py --holder`.
 
 ## Bench procedure (wrist)
 
@@ -124,6 +149,50 @@ joint-angle/pulse pairs through the linkage.
    how fast each servo has to turn.
 6. `sudo python3 Hardware/servo_output.py --wrist-only --speed 0.25` is the first
    real strum at quarter speed. Then 0.5, then 1.0.
+
+## Fingers
+
+Ten MG90S servos, two per finger: `<finger>_base` (bottom segment) and
+`<finger>_tip` (upper two segments together). A finger pose is ten "curl"
+numbers, 0 = straight, 1 = fully curled. Poses live in `Sim/finger_motion.py`,
+so the sim and the real hand use the same ones.
+
+1. Calibrate each servo: `sudo python3 Hardware/calibrate_servo.py <channel> lv`
+   - `open_pulse`: finger straight, tendon just snug.
+   - `closed_pulse`: segment curled to where it first touches its stop. Don't go
+     past it; a stalled MG90S gets hot fast.
+   Put the channel and both pulses in `FINGER_SERVOS` in `fingers.py`.
+2. Try one finger before the rest are wired:
+   `sudo python3 Hardware/hand_console.py --no-wrist --fingers index`
+   then `finger index 0.3`, `servo index_tip 0.6`, `open`.
+3. With all ten done, tune the pick grip in the console: `pose pick_ready`,
+   adjust with `finger` / `servo`, then `save pick_ready` prints the line to
+   paste into `finger_motion.py`. Same for `pick_grip`.
+4. `sudo python3 Hardware/pick_up.py` runs the hand-off grip and holds it so
+   you can tug the pick.
+
+While both PCA9685 boards are still at 0x40, every command reaches both
+boards. The scripts refuse to run if a finger and a wrist servo use the same
+channel number in that state.
+
+## Tests
+
+`Testing/hand_tests.py` runs the three CDR tests and writes a CSV per run to
+`Testing/results/` (dry runs go to `Testing/results/dry_run/`):
+
+    sudo python3 Testing/hand_tests.py finger index --segment tip
+    sudo python3 Testing/hand_tests.py strum --cycles 20 --bpm 60
+    sudo python3 Testing/hand_tests.py tempo --bpm 60        # then 90, then 120
+    python Testing/hand_tests.py report Testing/results/<file>.csv --fps 120
+
+Rehearse any of them with `--dry-run` (add `--auto` to have the prompts
+answered with made-up values, marked SIMULATED). `--no-fingers` runs the strum
+and tempo tests with the pick clamped or taped instead of gripped.
+
+For the tempo test, film at 120 fps, then type the frame number of each first
+string contact into the CSV's `contact_frame` column and run `report`. One
+frame at 120 fps is 8.3 ms, which is 3.3% of the 0.25 s interval at 120 BPM, so
+a reading that is one frame off already uses a third of the +/-10% allowance.
 
 ## Safety behaviour
 

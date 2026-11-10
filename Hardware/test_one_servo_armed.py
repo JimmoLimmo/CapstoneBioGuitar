@@ -1,6 +1,6 @@
 """Wiggle ONE servo through the new relay/E-stop box.
 
-Follows the box's software rules: relays start OFF (pins 7 and 11 HIGH),
+Follows the box's software rules: relays start OFF (see RELAY_MODE in power_box.py),
 nothing arms until you press Enter, any E-stop drops straight to SAFE,
 no automatic re-arm, and every exit path turns both relays OFF.
 
@@ -13,10 +13,11 @@ import atexit, signal, sys, threading, time
 import Jetson.GPIO as GPIO
 from adafruit_extended_bus import ExtendedI2C as I2C
 from adafruit_pca9685 import PCA9685
+from power_box import relay_on, relay_off, relay_off_level
 
 # --- pins (physical BOARD numbering) -----------------------------------------
-PIN_K1 = 7      # relay IN1, 5 V servo power, master hold. ACTIVE LOW.
-PIN_K2 = 11     # relay IN2, 8.4 V servo power. ACTIVE LOW.
+PIN_K1 = 7      # relay IN1, 5 V servo power, master hold. Polarity: RELAY_MODE in power_box.py
+PIN_K2 = 11     # relay IN2, 8.4 V servo power.
 PIN_ESTOP = 15  # LOW = E-stop released, HIGH = pressed or cable cut
 I2C_BUS = 7
 
@@ -30,8 +31,8 @@ address = int(sys.argv[2], 16) if len(sys.argv) > 2 else 0x42
 # --- relays OFF before anything else -----------------------------------------
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
-GPIO.setup(PIN_K1, GPIO.OUT, initial=GPIO.HIGH)
-GPIO.setup(PIN_K2, GPIO.OUT, initial=GPIO.HIGH)
+GPIO.setup(PIN_K1, GPIO.OUT, initial=relay_off_level(GPIO))
+GPIO.setup(PIN_K2, GPIO.OUT, initial=relay_off_level(GPIO))
 GPIO.setup(PIN_ESTOP, GPIO.IN)   # Jetson.GPIO has no internal pull-ups; relies on the 10k to pin 17
 
 pca = None
@@ -39,8 +40,8 @@ tripped = threading.Event()
 
 
 def relays_off():
-    GPIO.output(PIN_K1, GPIO.HIGH)
-    GPIO.output(PIN_K2, GPIO.HIGH)
+    relay_off(GPIO, PIN_K1)
+    relay_off(GPIO, PIN_K2)
 
 
 def pwm_off():
@@ -109,8 +110,8 @@ if tripped.is_set():
     sys.exit(1)
 
 pca.channels[channel].duty_cycle = HOME          # home pulse first
-GPIO.output(PIN_K1, GPIO.LOW)                     # then both relays allowed
-GPIO.output(PIN_K2, GPIO.LOW)
+relay_on(GPIO, PIN_K1)                            # then both relays allowed
+relay_on(GPIO, PIN_K2)
 print("[ARMED] Now press the physical RESET button on the box (servo power only comes on then).")
 input("[ARMED] Press Enter here once you've pressed RESET and heard the relays click... ")
 

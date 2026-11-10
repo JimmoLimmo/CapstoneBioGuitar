@@ -2,7 +2,7 @@
 
     python Hardware/servo_output.py --dry-run          # no hardware: prints targets + servo demand
     python Hardware/servo_output.py --wrist-only --speed 0.25   # first wrist bench run: quarter speed
-    python Hardware/servo_output.py                    # full hand, real speed
+    python Hardware/servo_output.py                    # full hand (fingers grip the pick first), real speed
     python Hardware/servo_output.py --wrist-only --sim-ip 192.168.1.20   # also stream to mvmnt_demo.py --follow
 
 Servo power goes through the electrical box (see power_box.py): the script
@@ -27,13 +27,14 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "Sim"))
 sys.path.insert(0, HERE)
 
 from strum_motion import (  # noqa: E402  (path insert must come first)
-    GRIP_CURL,
     WRIST_PRO_BASE_DEG,
     build_schedule,
     smooth,
     wrist_at,
 )
 from motion_link import DEFAULT_PORT, PoseSender  # noqa: E402
+import finger_motion as fm  # noqa: E402
+import fingers as fh  # noqa: E402
 import wrist_kinematics as wk  # noqa: E402
 from power_box import EStop, PowerBox  # noqa: E402
 
@@ -65,12 +66,8 @@ WRIST_SERVOS = {
 PULSE_PER_SERVO_DEG = (8191 - 1638) / 180.0
 
 # --- non-wrist channels ------------------------------------------------------
+# finger servos: fingers.py (FINGER_SERVOS); poses: Sim/finger_motion.py
 OTHER_CHANNELS = {
-    "grip": {  # pick-grip pose, set once at start; becomes 10 finger servos later
-        "board": "lv", "channel": None,   # TODO: confirm which board the fingers end up on
-        "curl_lo": 0.0, "pulse_lo": 1638,    # TODO: open hand
-        "curl_hi": 1.0, "pulse_hi": 8191,    # TODO: full fist
-    },
     "wrist_PRO": {  # forearm rotation -- not actuated in the CDR design; leave None
         "board": "lv", "channel": None,
         "deg_lo": -140.0, "pulse_lo": 1638,
@@ -142,6 +139,7 @@ class ServoBus:
         self.pca = {}
         self.last = {}
         self.sim = None    # optional PoseSender; set from --sim-ip
+        self.finger_pose = None   # what the fingers are holding, shown by the sim; None = wrist only
         if not dry_run:
             from adafruit_pca9685 import PCA9685
             from i2c_bus import open_bus
@@ -163,10 +161,10 @@ class ServoBus:
         if not self.dry_run:
             self.pca[board].channels[channel].duty_cycle = pulse
 
-    def publish(self, dev_deg, flex_deg):
-        """Tell the sim, if one is listening, what the wrist was just commanded to do."""
+    def publish(self, dev_deg, flex_deg, fingers=None):
+        """Tell the sim, if one is listening, what the hand was just commanded to do."""
         if self.sim:
-            self.sim.send(dev_deg, flex_deg)
+            self.sim.send(dev_deg, flex_deg, self.finger_pose if fingers is None else fingers)
 
     def release(self):
         """Stop pulsing every channel we used -- the servos go limp."""
@@ -199,6 +197,19 @@ def ease_wrist(bus, start, end, seconds=EASE_SECONDS, power=None):
             time.sleep(1.0 / CONTROL_HZ)
 
 
+def ease_fingers(bus, start, end, seconds, power=None):
+    """Move the fingers between two poses along a smoothstep, wrist held straight."""
+    steps = max(1, int(seconds * CONTROL_HZ))
+    for k in range(1, steps + 1):
+        if power is not None:
+            power.check()
+        bus.finger_pose = fm.blend(start, end, smooth(k / steps))
+        fh.write_fingers(bus, bus.finger_pose)
+        bus.publish(0.0, 0.0)
+        if not bus.dry_run:
+            time.sleep(1.0 / CONTROL_HZ)
+
+
 # --- checks ------------------------------------------------------------------
 
 def missing_calibration(wrist_only):
@@ -210,14 +221,19 @@ def missing_calibration(wrist_only):
             problems.append(f"{name}: no channel")
         if cfg["neutral_pulse"] is None:
             problems.append(f"{name}: no neutral_pulse")
-    channels = [(c["board"], c["channel"]) for c in WRIST_SERVOS.values() if c["channel"] is not None]
+    # by I2C address: boards sharing an address share channels
+    channels = [(BOARDS.get(c["board"]), c["channel"]) for c in WRIST_SERVOS.values() if c["channel"] is not None]
     if not wrist_only:
-        if OTHER_CHANNELS["grip"]["channel"] is None:
-            problems.append("grip: no channel (or run with --wrist-only)")
-        channels += [(c["board"], c["channel"]) for c in OTHER_CHANNELS.values() if c["channel"] is not None]
+        finger_problems = fh.missing_calibration()
+        if finger_problems:
+            problems += [f"finger {p}" for p in finger_problems]
+            problems.append("(fingers not ready: run with --wrist-only)")
+        channels += [(BOARDS.get(board), channel) for board, channel in fh.channels()]
+        channels += [(BOARDS.get(c["board"]), c["channel"]) for c in OTHER_CHANNELS.values() if c["channel"] is not None]
     dupes = sorted({c for c in channels if channels.count(c) > 1})
     if dupes:
-        problems.append(f"(board, channel) {dupes} assigned to more than one servo")
+        shown = ", ".join(f"{hex(address)} ch{channel}" for address, channel in dupes)
+        problems.append(f"I2C address / channel {shown} is driven by more than one servo")
     return problems
 
 
@@ -295,15 +311,22 @@ def main():
         if calibrated:
             write_wrist(bus, 0.0, 0.0)
         if not args.wrist_only:
-            grip = OTHER_CHANNELS["grip"]
-            bus.set(grip["board"], grip["channel"],
-                    lerp_pulse(GRIP_CURL, grip["curl_lo"], grip["curl_hi"], grip["pulse_lo"], grip["pulse_hi"]))
+            bus.finger_pose = dict(fm.OPEN)
+            fh.write_fingers(bus, bus.finger_pose)
             pro = OTHER_CHANNELS["wrist_PRO"]
             bus.set(pro["board"], pro["channel"],
                     lerp_pulse(WRIST_PRO_BASE_DEG, pro["deg_lo"], pro["deg_hi"], pro["pulse_lo"], pro["pulse_hi"]))
 
     try:
         power.arm(write_home)
+
+        if not args.wrist_only:
+            # grip the pick before the wrist moves
+            ease_fingers(bus, fm.OPEN, fm.PICK_READY, 0.8, power)
+            if not args.dry_run:
+                input("[servo] Lay the pick on the side of the index finger, then press Enter... ")
+                power.check()
+            ease_fingers(bus, fm.PICK_READY, fm.PICK_GRIP, 0.6, power)
 
         # Start from straight and ease into the first stroke's ready pose,
         # so the first real command is never a jump.
