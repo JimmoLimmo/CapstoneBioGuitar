@@ -7,12 +7,13 @@ Quick map of the scripts:
 | `hand_console.py` | Type commands to move fingers and wrist. Use this to program the finger poses. |
 | `servo_output.py` | Play the song (wrist strum; fingers grip the pick unless `--wrist-only`). |
 | `pick_up.py` | Get the pick into the hand (hand-off, or from a holder). |
-| `left_hand.py` | Left hand: its fingers follow a hand seen by the camera. |
+| `hand_mimic.py` | Camera mimic: show it a left or right hand and that robot hand follows. |
+| `left_hand.py` | The left hand's servos and camera tracking (used by `hand_mimic.py`; also runs alone). |
 | `Testing/hand_tests.py` | The CDR test plan: fingertip accuracy, strum repeatability, tempo. |
 | `calibrate_servo.py`, `test_one_servo.py` | Bench tools for one servo / the wrist. |
 | `hand_control.py`, `fingers.py`, `power_box.py`, `wrist_kinematics.py` | Shared code the scripts above use. |
 
-From the repo root, `python3 run.py [console|song|pick|test] ...` opens the sim
+From the repo root, `python3 run.py [console|song|pick|test|mimic] ...` opens the sim
 and runs the hand together (run it without sudo; it asks for the password).
 
 Every script takes `--dry-run` (no hardware needed) and `--sim-ip` (show the
@@ -174,8 +175,9 @@ so the sim and the real hand use the same ones.
 4. `sudo python3 Hardware/pick_up.py` runs the hand-off grip and holds it so
    you can tug the pick.
 
-Addresses (as wired on the box): the 8.4 V wrist board ("hv") is 0x40, the
-5 V finger board ("lv") is 0x41. The REV 3 sheets show them the other way round. Check with `sudo i2cdetect -y -r 7`.
+Addresses (as wired on the box): the 8.4 V board ("hv") is 0x40 and carries only the
+right-hand finger servos. The 5 V board ("lv", going to 6.4 V) is 0x41 and carries the
+wrist servos (channels 10-13) and the left hand (channels 0-4). The REV 3 sheets show them the other way round. Check with `sudo i2cdetect -y -r 7`.
 
 ## Left hand (camera mimic)
 
@@ -185,32 +187,56 @@ that finger. The servos are on the 5 V board (`lv`, 0x41):
 
 | Servo | Channel | Pulses |
 | --- | --- | --- |
-| `left_index` | 15 | 1638 open, 7000 closed (last year's values) |
-| `left_middle` | 14 | same |
-| `left_ring` | 13 | same |
-| `left_pinky` | 12 | same |
-| `left_thumb` | 11 | none yet: stays still until calibrated |
+| `left_index` | 1 | 1638 open, 7000 closed (last year's values) |
+| `left_middle` | 2 | same |
+| `left_ring` | 3 | same |
+| `left_pinky` | 4 | same |
+| `left_thumb` | 0 | none yet: stays still until calibrated |
 
-Channel 10 is spare. The table is `LEFT_SERVOS` in `left_hand.py`; bench values
+Channels 10-13 on this board are the wrist servos; 5-9, 14 and 15 are spare. The table is `LEFT_SERVOS` in `left_hand.py`; bench values
 go in `calibration.json` under `"left"`.
 
     python3 Hardware/left_hand.py --dry-run --show    # check the tracking, nothing moves
     sudo python3 Hardware/calibrate_servo.py left_thumb     # jog, then: open / closed
     sudo python3 Hardware/calibrate_servo.py left_index 12  # move a servo to another channel
-    python3 run.py mimic                              # the real thing
+    python3 run.py mimic --hand left                  # the real thing
 
 - Needs `opencv-python` and `mediapipe` on the Jetson (the right-hand scripts don't).
 - `--dry-run --show` prints each finger's angle. If a finger doesn't reach fully
   open or closed, change its `straight_deg` / `curled_deg` in `TRACKING`. The
   thumb's range there is a guess.
 - Don't run the old `Imitation/mimic.py` on this box: it writes to 0x40
-  channels 12-15, which are now wrist channels.
+  channels 12-15, which now belong to the right-hand finger board.
 - One script at a time. Both boards share the OE pin, so whichever script exits
   first turns the servo signals off for the other one too.
 - Power: the five left-hand servos (25 kg, 4.8-6.8 V) stall at about 2 A each,
   so together they can use the whole 10 A 5 V supply. That is fine for the
   mimic in free air, run on its own. It is not enough for fretting under load
   or for running with the wrist on the same supply.
+
+## Camera mimic, both hands
+
+`hand_mimic.py` watches the camera, reads whether the hand in view is a left or
+a right, and drives the matching robot hand. The other one eases open. The sim
+shows the right hand's commands; while the left hand is followed it shows the
+right hand open. The wrist is not driven.
+
+    python3 Hardware/hand_mimic.py --dry-run --show   # check the tracking, nothing moves
+    python3 run.py mimic --dry-run --show             # the same with the sim alongside
+    python3 run.py mimic --show                       # the real thing
+    python3 run.py mimic --hand right                 # always the right hand
+
+- First run: hold up your right hand and read the top line of the preview. If it
+  says `left`, add `--swap-hands`.
+- The hands swap only after the camera has seen the other hand for
+  `SWITCH_HOLD_S` (0.5 s), so a one-frame mislabel does nothing.
+- Right hand: each finger's `base` servo follows the knuckle and its `tip` servo
+  follows the two outer joints added together (`RIGHT_TRACKING`). To split them
+  differently, move joints between `base` and `tip` in `_finger()`. The
+  `straight_deg` / `curled_deg` values are guesses: read the real angles off
+  `--dry-run --show` with the finger straight and curled.
+- Servos with no calibration stay still, so before the right fingers are wired
+  the right hand moves only in the sim.
 
 ## Tests
 

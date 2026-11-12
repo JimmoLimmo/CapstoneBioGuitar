@@ -1,11 +1,11 @@
 """Left (fretting) hand: its finger servos follow a hand seen by the camera.
 
-    python3 run.py mimic                              # from the repo root
+    python3 run.py mimic --hand left                  # from the repo root (hand_mimic.py, left hand only)
     sudo python3 Hardware/left_hand.py                # the same, on its own
     python3 Hardware/left_hand.py --dry-run --show    # camera only: shows the tracking, moves nothing
 
 This is last year's Imitation/mimic.py moved onto the right-hand box. The servos
-sit on the 5 V board ("lv", 0x41) and go through power_box.py like every other
+sit on the 5 V board ("lv", 0x41), next to the wrist servos (ch 10-13), and go through power_box.py like every other
 script: Enter to arm, the E-stop stops it, signals off on every exit.
 
 Calibrate a servo with:  sudo python3 Hardware/calibrate_servo.py left_thumb
@@ -31,14 +31,14 @@ from strum_motion import smooth  # noqa: E402
 MODEL_PATH = os.path.join(REPO_ROOT, "MediaPipe", "hand_landmarker.task")
 
 # One servo per finger: open_pulse = finger straight, closed_pulse = curled.
-# The four fingers keep last year's channel order and pulses (never above 7000).
+# The four fingers keep last year's pulses (never above 7000).
 # The thumb is new: it stays still until it has both pulses.
 LEFT_SERVOS = {
-    "left_thumb":  {"board": "lv", "channel": 11, "open_pulse": None, "closed_pulse": None},
-    "left_index":  {"board": "lv", "channel": 15, "open_pulse": 1638, "closed_pulse": 7000},
-    "left_middle": {"board": "lv", "channel": 14, "open_pulse": 1638, "closed_pulse": 7000},
-    "left_ring":   {"board": "lv", "channel": 13, "open_pulse": 1638, "closed_pulse": 7000},
-    "left_pinky":  {"board": "lv", "channel": 12, "open_pulse": 1638, "closed_pulse": 7000},
+    "left_thumb":  {"board": "lv", "channel": 0,  "open_pulse": None, "closed_pulse": None},
+    "left_index":  {"board": "lv", "channel": 1,  "open_pulse": 1638, "closed_pulse": 7000},
+    "left_middle": {"board": "lv", "channel": 2,  "open_pulse": 1638, "closed_pulse": 7000},
+    "left_ring":   {"board": "lv", "channel": 3,  "open_pulse": 1638, "closed_pulse": 7000},
+    "left_pinky":  {"board": "lv", "channel": 4,  "open_pulse": 1638, "closed_pulse": 7000},
 }
 calibration.apply("left", LEFT_SERVOS)
 
@@ -160,6 +160,7 @@ class Camera:
         if not os.path.isfile(MODEL_PATH):
             raise SystemExit(f"[left] {MODEL_PATH} is missing.")
         self.cv2, self.mp = cv2, mp
+        self.label = self.world = None   # last read: "Left"/"Right", and the 3-D landmarks
         self.capture = cv2.VideoCapture(index)
         if not self.capture.isOpened():
             raise SystemExit(f"[left] can't open camera {index}. Check: ls /dev/video*")
@@ -176,7 +177,12 @@ class Camera:
             return None, None
         rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
         result = self.landmarker.detect(self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb))
-        return frame, (result.hand_landmarks[0] if result.hand_landmarks else None)
+        if not result.hand_landmarks:
+            self.label = self.world = None
+            return frame, None
+        self.label = result.handedness[0][0].category_name if result.handedness else None
+        self.world = result.hand_world_landmarks[0] if result.hand_world_landmarks else None
+        return frame, result.hand_landmarks[0]
 
     def show(self, frame, hand, lines):
         """Draw the preview. False once q is pressed."""

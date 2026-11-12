@@ -4,7 +4,7 @@
     python3 run.py song --wrist-only --speed 0.25   # play the song
     python3 run.py pick                             # grip the pick
     python3 run.py test strum --cycles 20           # a CDR test
-    python3 run.py mimic --show                     # left hand follows the camera (no sim)
+    python3 run.py mimic --show                     # show the camera a hand; that robot hand follows
     python3 run.py console --dry-run                # no hardware
     python3 run.py song --no-sim                    # hand only
     python3 run.py song --sim-delay 0.08            # hold the sim back to match servo lag
@@ -25,7 +25,7 @@ MODES = {
     "song": os.path.join("Hardware", "servo_output.py"),
     "pick": os.path.join("Hardware", "pick_up.py"),
     "test": os.path.join("Testing", "hand_tests.py"),
-    "mimic": os.path.join("Hardware", "left_hand.py"),
+    "mimic": os.path.join("Hardware", "hand_mimic.py"),
 }
 PORT = 5005
 SIM_WAIT_S = 20
@@ -76,7 +76,7 @@ def main():
         del args[i:i + 2]
     helping = "-h" in args or "--help" in args
     reporting = mode == "test" and (not args or args[0] == "report")
-    if helping or reporting or mode == "mimic":   # the sim only models the right hand
+    if helping or reporting:
         use_sim = False
 
     real = "--dry-run" not in args and not helping and not reporting

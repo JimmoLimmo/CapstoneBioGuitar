@@ -46,7 +46,7 @@ from run_log import RunLog  # noqa: E402
 # The marionette wrist has four MG995 servos (rated 4.8-7.2 V, run at 6 V),
 # two per axis. Names say which
 # way that servo PULLS the wrist when it reels in (see wrist_kinematics.py).
-#   board          which PCA9685: "hv" = 8.4 V board (0x40), "lv" = 5 V board (0x41).
+#   board          which PCA9685: "hv" = 8.4 V board (0x40), "lv" = 5 V board (0x41, going to 6.4 V).
 #   channel        PCA9685 channel 0-15 on that board.
 #   neutral_pulse  pulse with the wrist sitting straight (0 deg / 0 deg) and
 #                  this servo's tendon just snug -- not slack, not straining.
@@ -60,10 +60,10 @@ from run_log import RunLog  # noqa: E402
 # +deviation is ulnar (wrist_UDEV, toward the pinky), so the pinky-side servo
 # is dev_pos. calibrate_servo.py --wrist confirms; swap if backwards.
 WRIST_SERVOS = {
-    "dev_pos":  {"board": "hv", "channel": 10,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "dev_neg":  {"board": "hv", "channel": 11,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "flex_pos": {"board": "hv", "channel": 12,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
-    "flex_neg": {"board": "hv", "channel": 13,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "dev_pos":  {"board": "lv", "channel": 10,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "dev_neg":  {"board": "lv", "channel": 11,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "flex_pos": {"board": "lv", "channel": 12,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
+    "flex_neg": {"board": "lv", "channel": 13,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
 }
 calibration.apply("wrist", WRIST_SERVOS)
 
@@ -90,8 +90,8 @@ PULSE_ABS_MAX = 8191
 I2C_BUS = 7            # pins 3/5 on the Orin Nano -- confirm with: sudo i2cdetect -y -r 7
 BOARDS = {
     # As wired on the box (checked 2026-11-10 with i2cdetect: 40 and 41).
-    "lv": 0x41,        # 5 V finger board (relay K1)
-    "hv": 0x40,        # 8.4 V wrist board (relay K2)
+    "lv": 0x41,        # 5 V board (going to 6.4 V): wrist ch 10-13, left hand ch 0-4
+    "hv": 0x40,        # 8.4 V board: right-hand finger servos only
 }
 PWM_FREQUENCY = 50
 CONTROL_HZ = 50        # one update per PWM frame; faster wouldn't reach the servos
