@@ -7,6 +7,7 @@ Quick map of the scripts:
 | `hand_console.py` | Type commands to move fingers and wrist. Use this to program the finger poses. |
 | `servo_output.py` | Play the song (wrist strum; fingers grip the pick unless `--wrist-only`). |
 | `pick_up.py` | Get the pick into the hand (hand-off, or from a holder). |
+| `left_hand.py` | Left hand: its fingers follow a hand seen by the camera. |
 | `Testing/hand_tests.py` | The CDR test plan: fingertip accuracy, strum repeatability, tempo. |
 | `calibrate_servo.py`, `test_one_servo.py` | Bench tools for one servo / the wrist. |
 | `hand_control.py`, `fingers.py`, `power_box.py`, `wrist_kinematics.py` | Shared code the scripts above use. |
@@ -19,7 +20,7 @@ commands live in the sim). The wrist section below was written first; the
 finger sections are near the end.
 
 Turns the strum choreography into real PCA9685 servo commands for the
-marionette wrist (ball-and-socket joint, four Hiwonder HPS-0618SG servos in two opposing pairs, on the 8.4 V board). 
+marionette wrist (ball-and-socket joint, four MG995 servos in two opposing pairs). 
 Tested only against a fake PCA9685 so far; **no real servo has run this yet.**
 
 ## The chain
@@ -154,7 +155,7 @@ joint-angle/pulse pairs through the linkage.
 
 ## Fingers
 
-Ten MG90S servos, two per finger: `<finger>_base` (bottom segment) and
+HPS-0618SG servos, two per finger (ten in the code): `<finger>_base` (bottom segment) and
 `<finger>_tip` (upper two segments together). A finger pose is ten "curl"
 numbers, 0 = straight, 1 = fully curled. Poses live in `Sim/finger_motion.py`,
 so the sim and the real hand use the same ones.
@@ -162,7 +163,7 @@ so the sim and the real hand use the same ones.
 1. Calibrate each servo: `sudo python3 Hardware/calibrate_servo.py <channel> lv`
    - `open_pulse`: finger straight, tendon just snug.
    - `closed_pulse`: segment curled to where it first touches its stop. Don't go
-     past it; a stalled MG90S gets hot fast.
+     past it; a stalled servo pulls up to 2.5 A and gets hot fast.
    Put the channel and both pulses in `FINGER_SERVOS` in `fingers.py`.
 2. Try one finger before the rest are wired:
    `sudo python3 Hardware/hand_console.py --no-wrist --fingers index`
@@ -175,6 +176,41 @@ so the sim and the real hand use the same ones.
 
 Addresses (as wired on the box): the 8.4 V wrist board ("hv") is 0x40, the
 5 V finger board ("lv") is 0x41. The REV 3 sheets show them the other way round. Check with `sudo i2cdetect -y -r 7`.
+
+## Left hand (camera mimic)
+
+`left_hand.py` is last year's `Imitation/mimic.py` moved onto this box. MediaPipe
+tracks a hand on the camera and each left-hand finger servo follows the bend of
+that finger. The servos are on the 5 V board (`lv`, 0x41):
+
+| Servo | Channel | Pulses |
+| --- | --- | --- |
+| `left_index` | 15 | 1638 open, 7000 closed (last year's values) |
+| `left_middle` | 14 | same |
+| `left_ring` | 13 | same |
+| `left_pinky` | 12 | same |
+| `left_thumb` | 11 | none yet: stays still until calibrated |
+
+Channel 10 is spare. The table is `LEFT_SERVOS` in `left_hand.py`; bench values
+go in `calibration.json` under `"left"`.
+
+    python3 Hardware/left_hand.py --dry-run --show    # check the tracking, nothing moves
+    sudo python3 Hardware/calibrate_servo.py left_thumb     # jog, then: open / closed
+    sudo python3 Hardware/calibrate_servo.py left_index 12  # move a servo to another channel
+    python3 run.py mimic                              # the real thing
+
+- Needs `opencv-python` and `mediapipe` on the Jetson (the right-hand scripts don't).
+- `--dry-run --show` prints each finger's angle. If a finger doesn't reach fully
+  open or closed, change its `straight_deg` / `curled_deg` in `TRACKING`. The
+  thumb's range there is a guess.
+- Don't run the old `Imitation/mimic.py` on this box: it writes to 0x40
+  channels 12-15, which are now wrist channels.
+- One script at a time. Both boards share the OE pin, so whichever script exits
+  first turns the servo signals off for the other one too.
+- Power: the five left-hand servos (25 kg, 4.8-6.8 V) stall at about 2 A each,
+  so together they can use the whole 10 A 5 V supply. That is fine for the
+  mimic in free air, run on its own. It is not enough for fretting under load
+  or for running with the wrist on the same supply.
 
 ## Tests
 
@@ -210,9 +246,9 @@ a reading that is one frame off already uses a third of the +/-10% allowance.
 
 The CDR's 0.12 s strike needs about 563 deg/s at the wrist. With the
 placeholder geometry each servo turns about 1.5 deg per wrist degree, and the
-payout side peaks around 900 deg/s. The HPS-0618SG is rated at about
-1000 deg/s (0.06 s/60 deg at 8.4 V, no load), so that fits with little margin;
-under load it may still lag a little. The dry run prints the real numbers once
-the geometry is filled in. If it lags:
+payout side peaks around 900 deg/s. The MG995 at 6 V is rated at about 375 deg/s
+(0.16 s/60 deg, no load), so it can't keep up: the wrist will lag the strike by
+a factor of about 2.4. The dry run prints
+the real numbers once the geometry is filled in. To close the gap:
 - a larger spool radius, or tie points closer to the ball (more speed, less torque)
 - a longer `STRIKE_DURATION` or a narrower sweep in `strum_motion.py`

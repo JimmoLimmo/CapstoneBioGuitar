@@ -29,7 +29,8 @@ sys.path.insert(0, HERE)
 
 from strum_motion import (  # noqa: E402  (path insert must come first)
     WRIST_PRO_BASE_DEG,
-    build_schedule,
+    add_song_args,
+    schedule_from_args,
     smooth,
     wrist_at,
 )
@@ -38,10 +39,12 @@ import finger_motion as fm  # noqa: E402
 import fingers as fh  # noqa: E402
 import wrist_kinematics as wk  # noqa: E402
 from power_box import EStop, PowerBox  # noqa: E402
+import calibration  # noqa: E402
+from run_log import RunLog  # noqa: E402
 
-# --- wrist servos (TODO: fill in on the bench with calibrate_servo.py) -------
-# The marionette wrist has four Hiwonder HPS-0618SG servos (6-8.4 V, 2.5 A
-# stall) on the 8.4 V board, two per axis. Names say which
+# --- wrist servos (defaults; bench values come from calibration.json) --------
+# The marionette wrist has four MG995 servos (rated 4.8-7.2 V, run at 6 V),
+# two per axis. Names say which
 # way that servo PULLS the wrist when it reels in (see wrist_kinematics.py).
 #   board          which PCA9685: "hv" = 8.4 V board (0x40), "lv" = 5 V board (0x41).
 #   channel        PCA9685 channel 0-15 on that board.
@@ -62,9 +65,10 @@ WRIST_SERVOS = {
     "flex_pos": {"board": "hv", "channel": 12,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
     "flex_neg": {"board": "hv", "channel": 13,   "neutral_pulse": None, "reel_in_sign": +1, "min_pulse": 2500, "max_pulse": 7300},
 }
+calibration.apply("wrist", WRIST_SERVOS)
 
-# 500-2500 us over ~180 deg (the CDR servo test bench range; check the HPS-0618SG
-# datasheet's pulse range -- if it differs, change this).
+# 500-2500 us over ~180 deg (the CDR servo test bench range; MG995s vary, so
+# confirm it on the bench -- if it differs, change this).
 # At 50 Hz one duty-cycle count is 20000/65535 us, so 180 deg = 1638..8191.
 # Check it once: command neutral +/- 1638 counts and confirm the horn turns
 # about 45 deg each way. Adjust this if it doesn't.
@@ -277,6 +281,9 @@ def main():
                         help="stream wrist commands to the computer running mvmnt_demo.py --follow "
                              "(127.0.0.1 if it's this computer)")
     parser.add_argument("--sim-port", type=int, default=DEFAULT_PORT, help="UDP port for --sim-ip")
+    parser.add_argument("--log", action="store_true",
+                        help="save a per-tick CSV of the run (commanded angles, pulses, tick lateness) in Testing/results/")
+    add_song_args(parser)
     args = parser.parse_args()
     if args.speed <= 0:
         parser.error("--speed must be > 0")
@@ -292,7 +299,10 @@ def main():
     if not calibrated:
         print("[servo] (dry run) wrist calibration not filled in -- printing spool angles instead of pulses.")
 
-    schedule, source = build_schedule()
+    try:
+        schedule, source = schedule_from_args(args)
+    except ValueError as e:
+        parser.error(str(e))
     end_time = schedule[-1][0] + schedule[-1][2] + schedule[-1][3] + 0.5
     print(f"[servo] {len(schedule)} strokes from {source}{' [DRY RUN]' if args.dry_run else ''}")
     demand_report(schedule, args.speed)
@@ -308,6 +318,7 @@ def main():
         except OSError as e:
             print(f"[servo] can't reach sim address {args.sim_ip} ({e}); continuing without the sim.")
     dev, flex = 0.0, 0.0
+    run_log = RunLog(1.0 / CONTROL_HZ, wk.SERVO_NAMES, keep_rows=args.log)
 
     def write_home():
         """Safe HOME pulses on every channel we drive, written before power is allowed."""
@@ -344,15 +355,17 @@ def main():
         next_tick = 0.0
         reported = -1
         while True:
-            song_t = (time.perf_counter() - start) * args.speed
+            now = time.perf_counter() - start
+            song_t = now * args.speed
             if song_t > end_time:
                 break
 
             power.check()
             dev, flex, index = wrist_at(schedule, song_t)
-            if calibrated:
-                pulses = write_wrist(bus, dev, flex)
+            pulses = write_wrist(bus, dev, flex) if calibrated else {}
             bus.publish(dev, flex)
+            run_log.add(now, song_t, index, schedule[index][1] if index >= 0 else "-", dev, flex, pulses,
+                        now - next_tick)
 
             if args.dry_run and index > reported:
                 direction = schedule[index][1] if index >= 0 else "-"
@@ -385,6 +398,13 @@ def main():
         power.close()
         bus.release()
         print("[servo] stopped -- signals off, servos released.")
+        print(f"[servo] timing: {run_log.summary()}")
+        if args.log:
+            try:
+                saved = run_log.save(source, args.dry_run)
+                print(f"[servo] run log saved to {os.path.relpath(saved, REPO_ROOT)}")
+            except OSError as e:
+                print(f"[servo] could not save the run log ({e})")
 
 
 if __name__ == "__main__":

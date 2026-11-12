@@ -8,6 +8,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "Sim"))
 sys.path.insert(0, HERE)
 
+import calibration  # noqa: E402
 import finger_motion as fm  # noqa: E402
 import pick_up  # noqa: E402
 from hand_control import Hand  # noqa: E402
@@ -26,7 +27,7 @@ HELP = """Commands (curl is 0 = straight to 1 = fully curled):
     open / home / park         fingers open / wrist straight / both
     time SECONDS               how long each move takes (default 0.6)
     show                       current pose and the pulses being sent
-    save NAME                  print the current finger pose as a line to paste into finger_motion.py
+    save NAME                  keep the current finger pose as NAME (written to Hardware/calibration.json)
     q                          park and quit
 """
 
@@ -138,9 +139,16 @@ class Console:
         print("  pulses: " + (" ".join(f"{n}={p}" for n, p in pulses.items()) or "none (nothing calibrated)"))
 
     def do_save(self, name):
-        p = self.hand.finger_pose
+        name = name.lower()
+        p = {n: round(c, 3) for n, c in self.hand.finger_pose.items()}
+        fm.set_pose(name, p)
+        try:
+            calibration.save("poses", name, p)
+            print(f"  saved {name} to {calibration.path()}")
+        except OSError as e:
+            print(f"  kept for this session, but could not write {calibration.path()} ({e})")
         parts = ", ".join(f"{f}=({p[f + '_base']:.2f}, {p[f + '_tip']:.2f})" for f in fm.FINGERS)
-        print(f"  {name.upper()} = make_pose({parts})")
+        print(f"  as code: {name.upper()} = make_pose({parts})")
 
     def _warn_undriven(self, finger):
         if finger not in self.hand.fingers:

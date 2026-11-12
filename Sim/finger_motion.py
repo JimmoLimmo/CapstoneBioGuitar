@@ -36,7 +36,7 @@ def blend(a, b, s):
     return out
 
 
-# --- named poses (TODO: starting guesses, tune on the real hand) ---
+# --- named poses (starting guesses; poses saved from hand_console.py replace them) ---
 OPEN = make_pose(0.0)
 RELAXED = make_pose(0.2)
 FIST = make_pose(1.0)
@@ -50,6 +50,23 @@ NAMED_POSES = {
     "pick_ready": PICK_READY,
     "pick_grip": PICK_GRIP,
 }
+
+
+def set_pose(name, pose):
+    """Replace or add a named pose, e.g. one tuned and saved on the bench. "open" is home and stays fixed."""
+    if not name.isidentifier() or name != name.lower():
+        raise ValueError(f"pose names are lower-case words like pick_grip, not {name!r}")
+    if name == "open":
+        raise ValueError('"open" is the home pose and can\'t be changed')
+    unknown = set(pose) - set(SERVO_NAMES)
+    if unknown:
+        raise ValueError(f"unknown servo(s) {sorted(unknown)}")
+    new = clamp_pose({n: pose.get(n, 0.0) for n in SERVO_NAMES})
+    if name in NAMED_POSES:
+        NAMED_POSES[name].clear()
+        NAMED_POSES[name].update(new)    # in place, so PICK_READY / PICK_GRIP follow
+    else:
+        NAMED_POSES[name] = new
 
 
 # --- sim mapping: MPL joint angle (deg) at curl 1.0 ---

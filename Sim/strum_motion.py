@@ -19,10 +19,13 @@ SONG_TRACK = 1
 BPM = 90.0
 STRUM_INTERVAL_BEATS = 1.0      # 1.0 = one strum per beat, 0.5 = eighths
 FALLBACK_STRUMS = 32
-STRUM_DIRECTIONS = ["D"]        # cycled per stroke; ["D", "U"] to alternate
+STRUM_DIRECTIONS = ["D"]        # cycled per stroke; ["D", "U"] to alternate; "auto" = down on the beat, up off it
+PATTERN_SLOT_BEATS = 0.5        # --pattern: one character per eighth note
+PATTERN_REPEATS = 4
 
 # motion
 STRIKE_DURATION = 0.12          # sweep across the strings
+CONTACT_POINT = 0.5             # how far into the strike (0..1) the pick meets the strings; that moment lands on the note
 RECOVER_DURATION = 0.18         # lifted return, only when the next stroke needs it
 WRIST_YAW_DOWN_DEG = -20.0      # wrist_UDEV range is about -14.9..45, deliberately asymmetric
 WRIST_YAW_UP_DEG = 25.0
@@ -52,7 +55,7 @@ def smooth(t):
 
 
 # schedule
-# Each stroke is (onset, direction, strike_duration, recover_duration) with onset an absolute time in seconds from the start of the run.
+# Each stroke is (start, direction, strike_duration, recover_duration); start is when the strike begins, in seconds from the start of the run.
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SONG_DIR = os.path.join(REPO_ROOT, "Parsing", "inputs")
@@ -69,22 +72,23 @@ def find_song(name):
 
 
 def song_onsets(path, track):
-    """(onsets_from_zero, track_names). Rests are skipped; they just widen the gap."""
+    """(onsets_from_zero, beats_into_measure, track_names). Rests are skipped; they just widen the gap."""
     sys.path.insert(0, os.path.join(REPO_ROOT, "Parsing"))
     from GuitarProReader import GuitarProSong
 
     song = GuitarProSong(path)
     names = [t.name for t in song.song.tracks]
-    times = []
+    times, positions = [], []
     for measure in song.yield_timed_measures(track):
         for beat in measure.yield_timed_beats():
             if beat.beat.notes:
                 times.append(beat.time)
-    return ([t - times[0] for t in times] if times else []), names
+                positions.append((beat.time - measure.time) * song.beat_frequency)
+    return ([t - times[0] for t in times] if times else []), positions, names
 
 
-def fallback_onsets():
-    step = 60.0 / BPM * STRUM_INTERVAL_BEATS
+def fallback_onsets(bpm=None):
+    step = 60.0 / (BPM if bpm is None else bpm) * STRUM_INTERVAL_BEATS
     return [i * step for i in range(FALLBACK_STRUMS)]
 
 
@@ -94,50 +98,155 @@ def tempo_onsets(bpm, strokes, beats_per_stroke=0.5):
     return [i * step for i in range(strokes)]
 
 
+def parse_directions(value):
+    """["D", "U"], "DU" or "auto" -> a list of "D"/"U", or the string "auto"."""
+    if isinstance(value, str):
+        if value.strip().lower() == "auto":
+            return "auto"
+        value = list(value.strip())
+    value = [str(v).upper() for v in value]
+    if not value or set(value) - {"D", "U"}:
+        raise ValueError('directions are made of D and U (D, DU, DDU...), or "auto"')
+    return value
+
+
+def directions_from_positions(positions):
+    """Pendulum strumming: down on the even slots of each measure, up on the odd ones.
+    Slots are eighth notes, or sixteenths if any note falls between eighths."""
+    def off_grid(grid):
+        return any(abs(p / grid - round(p / grid)) > 0.05 for p in positions)
+
+    grid = 0.25 if off_grid(0.5) else 0.5
+    return ["D" if int(round(p / grid)) % 2 == 0 else "U" for p in positions]
+
+
+def parse_pattern(text):
+    """"D-DU-UDU" -> (slots in the pattern, [(slot, direction)]). "-" or "." is a slot with no stroke."""
+    slots = [c for c in str(text).upper() if not c.isspace()]
+    if not slots or set(slots) - set("DU-."):
+        raise ValueError('a pattern is made of D, U and - (no stroke), e.g. "D-DU-UDU"')
+    strokes = [(i, c) for i, c in enumerate(slots) if c in "DU"]
+    if not strokes:
+        raise ValueError("the pattern has no strokes in it")
+    return len(slots), strokes
+
+
+def pattern_onsets(pattern, bpm, repeats=None):
+    """(onsets, directions) for a pattern played `repeats` times, PATTERN_SLOT_BEATS per character."""
+    length, strokes = parse_pattern(pattern)
+    repeats = PATTERN_REPEATS if repeats is None else repeats
+    step = 60.0 / bpm * PATTERN_SLOT_BEATS
+    first = strokes[0][0]
+    onsets = [(r * length + slot - first) * step for r in range(repeats) for slot, _ in strokes]
+    return onsets, [direction for _ in range(repeats) for _, direction in strokes]
+
+
 def schedule_from_onsets(onsets, directions=None):
-    """Onset times (s) -> schedule; directions cycle per stroke (None = STRUM_DIRECTIONS)."""
-    directions = directions or STRUM_DIRECTIONS
-    schedule = []
+    """Note times (s) -> schedule; directions cycle per stroke (None = STRUM_DIRECTIONS).
+
+    Each strike is placed so the pick meets the strings on the note
+    (CONTACT_POINT of the way through the strike), and is shortened where notes
+    are close together so strikes never overlap. The first strike still starts
+    at onsets[0].
+    """
+    directions = parse_directions(STRUM_DIRECTIONS if directions is None else directions)
+    if directions == "auto":
+        directions = ["D", "U"]
+    contact = max(0.0, min(1.0, CONTACT_POINT))
+    tail = STRIKE_DURATION + RECOVER_DURATION
+    strikes = []
     for i, onset in enumerate(onsets):
-        budget = (onsets[i + 1] - onset) if i + 1 < len(onsets) else STRIKE_DURATION + RECOVER_DURATION
-        strike = min(STRIKE_DURATION, budget * 0.5)
-        schedule.append((
-            onset,
-            directions[i % len(directions)],
-            strike,
-            min(RECOVER_DURATION, budget - strike),
-        ))
+        room = (onsets[i + 1] - onset) if i + 1 < len(onsets) else tail
+        if contact > 0 and i > 0:
+            room = min(room, onset - onsets[i - 1])
+        strikes.append(min(STRIKE_DURATION, room * 0.5))
+    lead = strikes[0] * contact if strikes else 0.0
+    starts = [onset - strike * contact + lead for onset, strike in zip(onsets, strikes)]
+    schedule = []
+    for i, (start, strike) in enumerate(zip(starts, strikes)):
+        free = (starts[i + 1] - start if i + 1 < len(starts) else tail) - strike
+        schedule.append((start, directions[i % len(directions)], strike, max(0.0, min(RECOVER_DURATION, free))))
     return schedule
 
 
-def build_schedule():
-    onsets, source = [], f"{BPM} BPM fallback"
-    if SONG_FILE:
-        found = find_song(SONG_FILE)
+def build_schedule(song=None, track=None, bpm=None, pattern=None, repeats=None, directions=None):
+    """(schedule, where it came from). Anything left as None uses the constants at the top of this file.
+
+    A pattern, or a bpm with no song, strums at constant tempo; so does song="none".
+    Raises ValueError for settings that make no sense.
+    """
+    directions = parse_directions(STRUM_DIRECTIONS if directions is None else directions)
+    if bpm is not None and not (20 <= bpm <= 300):
+        raise ValueError("bpm must be between 20 and 300")
+    if repeats is not None and not (1 <= repeats <= 200):
+        raise ValueError("repeats must be between 1 and 200")
+    if track is not None and track < 0:
+        raise ValueError("track can't be negative")
+    tempo = BPM if bpm is None else bpm
+
+    if pattern:
+        repeats = PATTERN_REPEATS if repeats is None else repeats
+        onsets, pattern_directions = pattern_onsets(pattern, tempo, repeats)
+        return schedule_from_onsets(onsets, pattern_directions), f'pattern "{pattern}" x{repeats} at {tempo:g} BPM'
+
+    if song is None:
+        song = None if bpm is not None else SONG_FILE
+    elif song.strip().lower() == "none":
+        song = None
+    track = SONG_TRACK if track is None else track
+
+    onsets, positions, source = [], [], f"{tempo:g} BPM constant tempo"
+    if song:
+        found = find_song(song)
         if not found:
             available = sorted(f for f in os.listdir(SONG_DIR) if f.lower().endswith((".gp3", ".gp4", ".gp5")))
-            print(f"[strum] SONG_FILE not found: {SONG_FILE}")
+            print(f"[strum] song not found: {song}")
             print(f"[strum]   songs available in Parsing/inputs: {', '.join(available) or 'none'}")
         else:
             try:
-                onsets, tracks = song_onsets(found, SONG_TRACK)
+                onsets, positions, tracks = song_onsets(found, track)
                 if onsets:
-                    source = f"{os.path.basename(found)} track {SONG_TRACK} ({tracks[SONG_TRACK]})"
+                    source = f"{os.path.basename(found)} track {track} ({tracks[track]})"
+                    if bpm is not None:
+                        print("[strum] --bpm is ignored for a song; the tab sets the tempo (use --speed to slow it).")
                 else:
-                    print(f"[strum] {os.path.basename(found)} track {SONG_TRACK} has no played notes.")
+                    print(f"[strum] {os.path.basename(found)} track {track} has no played notes.")
                     print("[strum]   tracks: " + ", ".join(f"{i}={n}" for i, n in enumerate(tracks)))
             except ImportError:
                 print("[strum] PyGuitarPro is not installed in this environment.")
                 print("[strum]   fix with:  pip install PyGuitarPro")
             except IndexError:
-                print(f"[strum] SONG_TRACK {SONG_TRACK} is out of range for this song.")
+                print(f"[strum] track {track} is out of range for this song.")
             except Exception as e:
                 print(f"[strum] {os.path.basename(found)} failed to parse ({e})")
+        if not onsets:
+            print("[strum] using the constant-tempo fallback instead.")
     if not onsets:
-        print("[strum] using the constant-tempo fallback instead.")
-        onsets = fallback_onsets()
+        onsets = fallback_onsets(tempo)
+        positions = [i * STRUM_INTERVAL_BEATS for i in range(len(onsets))]
 
-    return schedule_from_onsets(onsets), source
+    if directions == "auto":
+        directions = directions_from_positions(positions)
+    return schedule_from_onsets(onsets, directions), source
+
+
+def add_song_args(parser):
+    """--song / --track / --bpm / --pattern / --repeats / --directions, for any script that plays a schedule."""
+    group = parser.add_argument_group("what to play (defaults are the constants in Sim/strum_motion.py)")
+    group.add_argument("--song", help="Guitar Pro file: a name in Parsing/inputs or a path; 'none' = constant tempo")
+    group.add_argument("--track", type=int, help="track number in the song")
+    group.add_argument("--bpm", type=float,
+                       help="constant-tempo strumming at this tempo (also the tempo of --pattern)")
+    group.add_argument("--pattern",
+                       help='strum pattern, one character per eighth note: D, U, - = no stroke, e.g. "D-DU-UDU"')
+    group.add_argument("--repeats", type=int, help=f"times to play --pattern (default {PATTERN_REPEATS})")
+    group.add_argument("--directions",
+                       help="D, DU, DDU... cycled per stroke, or auto (down on the beat, up off it)")
+
+
+def schedule_from_args(args):
+    return build_schedule(song=args.song, track=args.track, bpm=args.bpm, pattern=args.pattern,
+                          repeats=args.repeats, directions=args.directions)
 
 
 # pose
@@ -165,7 +274,7 @@ def wrist_at(schedule, t):
     onset, direction, strike, recover = schedule[i]
     elapsed = t - onset
 
-    if elapsed <= strike:
+    if strike > 0 and elapsed <= strike:
         start, end = ready_yaw(direction), follow_yaw(direction)
         return start + (end - start) * smooth(elapsed / strike), 0.0, i
 
