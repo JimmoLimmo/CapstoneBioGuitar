@@ -13,6 +13,7 @@ Run it without sudo: the sim needs your desktop, and the hand part asks for
 your password itself.
 """
 import os
+import site
 import socket
 import subprocess
 import sys
@@ -91,7 +92,10 @@ def main():
     if listening:
         cmd += ["--sim-ip", "127.0.0.1"]
     if needs_sudo:
-        cmd = ["sudo", *cmd]
+        # sudo's python can't see packages pip installed for this user (opencv, mediapipe)
+        paths = [p for p in (site.getusersitepackages(), os.environ.get("PYTHONPATH")) if p and os.path.exists(p.split(os.pathsep)[0])]
+        env = ["env", "PYTHONPATH=" + os.pathsep.join(paths)] if paths else []
+        cmd = ["sudo", *env, *cmd]
 
     hand = subprocess.Popen(cmd, cwd=ROOT)
     code = None
