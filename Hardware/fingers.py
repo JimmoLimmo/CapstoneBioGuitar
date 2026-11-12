@@ -19,16 +19,16 @@ PULSE_ABS_MAX = 8191
 
 # defaults; bench values come from calibration.json (calibrate_servo.py <servo> <channel>)
 FINGER_SERVOS = {
-    "thumb_base":  {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "thumb_tip":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "index_base":  {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "index_tip":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "middle_base": {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "middle_tip":  {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "ring_base":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "ring_tip":    {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "pinky_base":  {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "pinky_tip":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "thumb_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "thumb_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "index_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "index_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "middle_base": {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "middle_tip":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "ring_base":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "ring_tip":    {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "pinky_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "pinky_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
 }
 assert set(FINGER_SERVOS) == set(SERVO_NAMES)
 calibration.apply("fingers", FINGER_SERVOS)

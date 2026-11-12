@@ -2,7 +2,7 @@
 
 One servo by name -- jog it, then save where it is:
     sudo python3 Hardware/calibrate_servo.py dev_pos        # wrist servo: dev_pos, dev_neg, flex_pos, flex_neg
-    sudo python3 Hardware/calibrate_servo.py index_tip 3    # finger servo on channel 3 of the 5 V board
+    sudo python3 Hardware/calibrate_servo.py index_tip 3    # finger servo on channel 3 of the 8.4 V board
     sudo python3 Hardware/calibrate_servo.py left_thumb     # left-hand servo (left_thumb ... left_pinky)
   At the prompt type a pulse (4900) or a nudge (+50, -50), then
     wrist servo:   neutral | min | max | sign + | sign -
