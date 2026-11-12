@@ -1,4 +1,4 @@
-"""Finger servos: curl (0..1) -> PCA9685 pulse for the ten MG90S finger servos.
+"""Finger servos: curl (0..1) -> PCA9685 pulse for the HPS-0618SG finger servos (two per finger).
 
 open_pulse = finger straight, tendon just snug. closed_pulse = curled, just touching its stop.
 """
@@ -8,13 +8,16 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "Sim"))
+sys.path.insert(0, HERE)
 
+import calibration  # noqa: E402
+import finger_motion  # noqa: E402
 from finger_motion import FINGERS, SERVO_NAMES, clamp_pose  # noqa: E402
 
 PULSE_ABS_MIN = 1638   # same last-resort clamp as servo_output.py (500-2500 us)
 PULSE_ABS_MAX = 8191
 
-# TODO: fill in on the bench (calibrate_servo.py <channel> lv)
+# defaults; bench values come from calibration.json (calibrate_servo.py <servo> <channel>)
 FINGER_SERVOS = {
     "thumb_base":  {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
     "thumb_tip":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
@@ -28,6 +31,8 @@ FINGER_SERVOS = {
     "pinky_tip":   {"board": "lv", "channel": None, "open_pulse": None, "closed_pulse": None},
 }
 assert set(FINGER_SERVOS) == set(SERVO_NAMES)
+calibration.apply("fingers", FINGER_SERVOS)
+calibration.apply_poses(finger_motion)
 
 
 def servos_for(fingers):

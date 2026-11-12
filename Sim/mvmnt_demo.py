@@ -18,10 +18,10 @@ from motion_link import DEFAULT_PORT, PoseFollower, PoseReceiver
 from strum_motion import (
     FINGER_HINTS,
     STRING_LINK_NAMES,
-    STRUM_DIRECTIONS,
-    build_schedule,
+    add_song_args,
     d,
     pose,
+    schedule_from_args,
     wrist_at,
 )
 
@@ -42,6 +42,7 @@ parser.add_argument("--follow", action="store_true",
 parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="UDP port for --follow")
 parser.add_argument("--delay", type=float, default=0.0,
                     help="seconds to hold each pose back in --follow, to line up with servo lag")
+add_song_args(parser)
 ARGS = parser.parse_args()
 if ARGS.delay < 0:
     parser.error("--delay must be >= 0")
@@ -200,9 +201,12 @@ if CALIBRATE:
 # Pose comes from the wall clock, so strokes land on time whatever the physics
 # manages; physics steps catch up to real time and resync if they can't.
 
-schedule, source = build_schedule()
+try:
+    schedule, source = schedule_from_args(ARGS)
+except ValueError as e:
+    sys.exit(f"[strum] {e}")
 end_time = schedule[-1][0] + schedule[-1][2] + schedule[-1][3] + 0.5
-print(f"[strum] {len(schedule)} strokes from {source}, directions {STRUM_DIRECTIONS}")
+print(f"[strum] {len(schedule)} strokes from {source}, starting {''.join(s[1] for s in schedule[:8])}")
 
 def report(i, hits):
     if i < 0:

@@ -2,7 +2,7 @@
 
 The CDR's final wrist (parts 301-304) is a ball-and-socket joint on a center
 post, with four arms hanging down from the upper wrist piece. Each arm is tied
-to a tendon that runs down to a spool horn on one of four HPS-0618SG servos. Two
+to a tendon that runs down to a spool horn on one of four MG995 servos. Two
 opposite servos make one axis: one reels in while the other pays out.
 
 So a commanded wrist pose is NOT one servo angle per joint. This module turns
@@ -36,12 +36,12 @@ ARM_RADIUS_MM = 15.0       # horizontal distance from ball center to each arm's 
 ARM_DROP_MM = 10.0         # how far BELOW the ball center those tie points sit
 ANCHOR_RADIUS_MM = 15.0    # horizontal distance from the post to where each tendon leaves its spool/guide
 ANCHOR_DROP_MM = 60.0      # how far below the ball center that exit point is
-SPOOL_RADIUS_MM = 10.0     # radius the tendon wraps on (re-measure on the HPS-0618SG horn/spool)
+SPOOL_RADIUS_MM = 10.0     # radius the tendon wraps on (re-measure on the real horn/spool)
 
-# Hiwonder HPS-0618SG: <=0.06 s/60 deg at 8.4 V, no load (~1000 deg/s); 500-2500 us
-# over 180 deg; 6 kg.cm and <=2.5 A stall at 8.4 V. Was the MG90S (~600 deg/s).
-SERVO_NAME = "HPS-0618SG"
-SERVO_RATED_DEG_PER_S = 1000.0
+# MG995 run at 6 V: 0.16 s/60 deg, no load (~375 deg/s; ~300 deg/s at 4.8 V).
+# Rated 4.8-7.2 V. Was the HPS-0618SG (~1000 deg/s).
+SERVO_NAME = "MG995"
+SERVO_RATED_DEG_PER_S = 375.0
 
 # Which side each servo's tendon is on. A servo is named for the direction it
 # PULLS the wrist: "dev_pos" reeling in moves the wrist toward +deviation.
