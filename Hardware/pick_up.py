@@ -15,13 +15,13 @@ READY_SECONDS = 0.8
 CLOSE_SECONDS = 0.6     # slow, so the thumb presses the pick instead of knocking it off
 SETTLE_SECONDS = 0.3
 
-# --- holder pickup (TODO: placeholders until the holder is built) -------------
+# holder pickup (TODO: placeholders until the holder is built)
 HOLDER_WRIST = (0.0, -15.0)   # (deviation, flexion) deg that puts the index platform under the pick
 LIFT_WRIST = (0.0, 10.0)      # pull the pick up and out of the holder before going home
 
 
+# Hand-off: make the platform, wait for the pick, close the thumb on it.
 def grip_pick(hand, ask=True):
-    """Hand-off: make the platform, wait for the pick, close the thumb on it."""
     hand.move(fingers=fm.PICK_READY, seconds=READY_SECONDS)
     if ask and not hand.dry_run:
         input("[pick] Lay the pick on the side of the index finger, tip pointing at the strings, "

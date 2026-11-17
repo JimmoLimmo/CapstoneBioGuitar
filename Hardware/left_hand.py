@@ -57,7 +57,7 @@ assert set(TRACKING) == set(LEFT_SERVOS)
 MAX_CURL_PER_S = 4.0   # fastest a finger is told to move: full travel in 0.25 s
 
 
-# --- calibration -------------------------------------------------------------
+# calibration
 
 def calibrated(name):
     c = LEFT_SERVOS[name]
@@ -68,8 +68,8 @@ def uncalibrated():
     return [n for n in LEFT_SERVOS if not calibrated(n)]
 
 
+# Reasons not to move anything.
 def problems():
-    """Reasons not to move anything."""
     out = []
     if not any(calibrated(n) for n in LEFT_SERVOS):
         out.append("no left-hand servo has a channel and both pulses")
@@ -87,10 +87,10 @@ def problems():
     return out
 
 
-# --- camera angles -> pulses ---------------------------------------------------
+# camera angles to pulses
 
+# Angle at b in degrees, measured in the image; None if two landmarks coincide.
 def joint_angle(a, b, c):
-    """Angle at b in degrees, measured in the image; None if two landmarks coincide."""
     ax, ay, cx, cy = a.x - b.x, a.y - b.y, c.x - b.x, c.y - b.y
     norm = math.hypot(ax, ay) * math.hypot(cx, cy)
     if norm == 0:
@@ -98,8 +98,8 @@ def joint_angle(a, b, c):
     return math.degrees(math.acos(max(-1.0, min(1.0, (ax * cx + ay * cy) / norm))))
 
 
+# {servo: bend angle in degrees} from one hand's 21 MediaPipe landmarks.
 def finger_angles(landmarks):
-    """{servo: bend angle in degrees} from one hand's 21 MediaPipe landmarks."""
     out = {}
     for name, t in TRACKING.items():
         angle = joint_angle(*(landmarks[i] for i in t["joints"]))
@@ -113,8 +113,8 @@ def curl_of(name, angle):
     return max(0.0, min(1.0, (t["straight_deg"] - angle) / (t["straight_deg"] - t["curled_deg"])))
 
 
+# Move each curl toward its target by at most `limit`; fingers with no target hold.
 def step(pose, target, limit):
-    """Move each curl toward its target by at most `limit`; fingers with no target hold."""
     return {n: v + max(-limit, min(limit, target.get(n, v) - v)) for n, v in pose.items()}
 
 
@@ -144,10 +144,10 @@ def ease_open(bus, power, pose, seconds=so.EASE_SECONDS):
             time.sleep(1.0 / so.CONTROL_HZ)
 
 
-# --- camera ------------------------------------------------------------------
+# camera
 
+# The webcam and MediaPipe's hand tracker.
 class Camera:
-    """The webcam and MediaPipe's hand tracker."""
 
     def __init__(self, index):
         try:
@@ -170,8 +170,8 @@ class Camera:
             num_hands=1,
         ))
 
+    # (frame, landmarks of the hand in view or None); (None, None) if the camera gave no frame.
     def read(self):
-        """(frame, landmarks of the hand in view or None); (None, None) if the camera gave no frame."""
         ok, frame = self.capture.read()
         if not ok:
             return None, None
@@ -184,8 +184,8 @@ class Camera:
         self.world = result.hand_world_landmarks[0] if result.hand_world_landmarks else None
         return frame, result.hand_landmarks[0]
 
+    # Draw the preview. False once q is pressed.
     def show(self, frame, hand, lines):
-        """Draw the preview. False once q is pressed."""
         cv2 = self.cv2
         if hand:
             height, width = frame.shape[:2]
@@ -224,7 +224,7 @@ def status_lines(angles, pose, sent):
     return lines
 
 
-# --- main --------------------------------------------------------------------
+# main
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

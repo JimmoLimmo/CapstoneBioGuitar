@@ -43,8 +43,8 @@ def port_taken():
         s.close()
 
 
+# (sim process or None, whether anything is listening for poses).
 def start_sim(delay):
-    """(sim process or None, whether anything is listening for poses)."""
     if port_taken():
         print(f"[run] a sim is already open on UDP {PORT}; using it.")
         return None, True

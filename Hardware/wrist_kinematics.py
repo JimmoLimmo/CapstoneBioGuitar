@@ -29,7 +29,7 @@ Coordinate frame (forearm frame, millimetres):
 
 import math
 
-# --- geometry (TODO: measure from the CAD / the printed parts) -------------
+# geometry (TODO: measure from the CAD / the printed parts)
 # Every number here is a PLACEHOLDER sized from the CDR drawing (0.75 in wrist,
 # servo horns). Get the real values from the 301/302/303 CAD files.
 ARM_RADIUS_MM = 15.0       # horizontal distance from ball center to each arm's tendon tie point
@@ -49,7 +49,7 @@ SERVO_RATED_DEG_PER_S = 375.0
 #   +deviation about +x lifts +y and drops -y, so its puller sits at -y.
 #   +flexion   about +y lifts -x and drops +x, so its puller sits at +x.
 # If the real hand moves the wrong way on the bench, swap the two CHANNEL
-# numbers for that pair in servo_output.py -- don't edit these.
+# numbers for that pair in servo_output.py, don't edit these.
 SERVO_SIDES = {
     "dev_pos": (0.0, -1.0),
     "dev_neg": (0.0, 1.0),
@@ -59,8 +59,8 @@ SERVO_SIDES = {
 SERVO_NAMES = tuple(SERVO_SIDES)
 
 
+# Rotate a forearm-frame point by flexion about y, then deviation about x.
 def _rotate(point, dev_deg, flex_deg):
-    """Rotate a forearm-frame point by flexion about y, then deviation about x."""
     x, y, z = point
     f = math.radians(flex_deg)
     x, z = x * math.cos(f) + z * math.sin(f), -x * math.sin(f) + z * math.cos(f)
@@ -79,8 +79,8 @@ def _anchor_point(name):
     return (sx * ANCHOR_RADIUS_MM, sy * ANCHOR_RADIUS_MM, -ANCHOR_DROP_MM)
 
 
+# {servo_name: tendon length in mm} with the wrist at this pose.
 def tendon_lengths(dev_deg, flex_deg):
-    """{servo_name: tendon length in mm} with the wrist at this pose."""
     lengths = {}
     for name in SERVO_NAMES:
         tx, ty, tz = _rotate(_tie_point(name), dev_deg, flex_deg)
@@ -89,19 +89,19 @@ def tendon_lengths(dev_deg, flex_deg):
     return lengths
 
 
+# {servo_name: spool rotation in degrees from neutral}.
+#
+# Positive = reel IN (string gets shorter). Neutral (0, 0) is all zeros,
+# which is the pose at which each servo's neutral_pulse is measured.
 def servo_angles(dev_deg, flex_deg):
-    """{servo_name: spool rotation in degrees from neutral}.
-
-    Positive = reel IN (string gets shorter). Neutral (0, 0) is all zeros,
-    which is the pose at which each servo's neutral_pulse is measured."""
     now = tendon_lengths(dev_deg, flex_deg)
     rest = tendon_lengths(0.0, 0.0)
     return {name: math.degrees((rest[name] - now[name]) / SPOOL_RADIUS_MM) for name in SERVO_NAMES}
 
 
+# How much string a 'just mirror the opposite servo' scheme would get wrong,
+# per pair, in mm. Positive = that pair would go slack, negative = over-tight.
 def mirrored_error_mm(dev_deg, flex_deg):
-    """How much string a 'just mirror the opposite servo' scheme would get wrong,
-    per pair, in mm. Positive = that pair would go slack, negative = over-tight."""
     change = {n: tendon_lengths(dev_deg, flex_deg)[n] - tendon_lengths(0.0, 0.0)[n] for n in SERVO_NAMES}
     return {
         "dev": change["dev_pos"] + change["dev_neg"],
@@ -109,12 +109,12 @@ def mirrored_error_mm(dev_deg, flex_deg):
     }
 
 
+# Sweep a whole strum schedule and report what the servos actually have to do.
+#
+# Returns {servo_name: (min_deg, max_deg, peak_deg_per_s)}, the travel each
+# servo needs and the fastest it ever has to turn. Independent of the
+# control loop rate, so it shows the true demand on the servos.
 def profile(schedule, wrist_at, step=0.002):
-    """Sweep a whole strum schedule and report what the servos actually have to do.
-
-    Returns {servo_name: (min_deg, max_deg, peak_deg_per_s)} -- the travel each
-    servo needs and the fastest it ever has to turn. Independent of the
-    control loop rate, so it shows the true demand on the servos."""
     if not schedule:
         return {}
     end = schedule[-1][0] + schedule[-1][2] + schedule[-1][3]
@@ -146,7 +146,7 @@ def _report():
               + f" | {e['dev']:+.2f} / {e['flex']:+.2f}")
 
     ratio = abs(servo_angles(1.0, 0.0)["dev_pos"])
-    print(f"\nServo turns ~{ratio:.2f} deg per wrist deg near neutral (≈ arm radius / spool radius).")
+    print(f"\nServo turns ~{ratio:.2f} deg per wrist deg near neutral (about arm radius / spool radius).")
     print(f"CDR strike needs ~563 deg/s at the wrist -> ~{563 * ratio:.0f} deg/s at the servo "
           f"({SERVO_NAME} rated ~{SERVO_RATED_DEG_PER_S:.0f} deg/s, no load).")
     if 563 * ratio > SERVO_RATED_DEG_PER_S:

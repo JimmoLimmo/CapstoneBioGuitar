@@ -28,8 +28,8 @@ def encode_pose(run, seq, dev, flex, fingers=None):
     return json.dumps(msg).encode()
 
 
+# A pose dict (fingers = {servo: curl} or None), or None if the packet isn't one of ours.
 def decode_pose(data):
-    """A pose dict (fingers = {servo: curl} or None), or None if the packet isn't one of ours."""
     try:
         msg = json.loads(data.decode())
         fingers = None
@@ -44,8 +44,8 @@ def decode_pose(data):
         return None
 
 
+# Used inside the servo loop, so it never blocks and never raises on a send.
 class PoseSender:
-    """Used inside the servo loop, so it never blocks and never raises on a send."""
 
     def __init__(self, host, port=DEFAULT_PORT):
         self.addr = (socket.gethostbyname(host), port)   # resolve once, before the loop
@@ -65,12 +65,11 @@ class PoseSender:
                 self.warned = True
 
 
+# Orders incoming poses and holds them back by `delay` seconds.
+#
+# Late packets are dropped, and poll() always returns the newest pose that is
+# due, so the sim jumps forward if it falls behind instead of building a backlog.
 class PoseFollower:
-    """Orders incoming poses and holds them back by `delay` seconds.
-
-    Late packets are dropped, and poll() always returns the newest pose that is
-    due, so the sim jumps forward if it falls behind instead of building a backlog.
-    """
 
     def __init__(self, delay=0.0):
         self.delay = delay
@@ -90,8 +89,8 @@ class PoseFollower:
         self.last_received = now
         self.queue.append((now, msg))
 
+    # (dev, flex, fingers) if a new pose is due, otherwise None.
     def poll(self, now):
-        """(dev, flex, fingers) if a new pose is due, otherwise None."""
         due = None
         while self.queue and self.queue[0][0] <= now - self.delay:
             due = self.queue.popleft()[1]
@@ -104,8 +103,8 @@ class PoseReceiver:
         self.sock.bind(("0.0.0.0", port))
         self.sock.setblocking(False)
 
+    # Move every waiting packet into the follower.
     def drain(self, follower, now):
-        """Move every waiting packet into the follower."""
         while True:
             try:
                 data, _ = self.sock.recvfrom(2048)

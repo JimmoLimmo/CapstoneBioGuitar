@@ -56,14 +56,14 @@ RELAY_MODE = "active_high"
 _MODES = ("active_low", "active_high", "release_on")
 
 
-# --- relay helpers (alternative rewire only) -------------------------------------
+# relay helpers (alternative rewire only)
 def _check_mode():
     if RELAY_MODE not in _MODES:
         raise ValueError(f"RELAY_MODE must be one of {_MODES}, not {RELAY_MODE!r}")
 
 
+# The level to drive a relay pin to for OFF.
 def relay_off_level(GPIO):
-    """The level to drive a relay pin to for OFF."""
     _check_mode()
     return GPIO.LOW if RELAY_MODE == "active_high" else GPIO.HIGH
 
@@ -91,15 +91,15 @@ def relay_on(GPIO, pin):
         _drive(GPIO, pin, GPIO.HIGH if RELAY_MODE == "active_high" else GPIO.LOW)
 
 
-# --- pins ------------------------------------------------------------------------
-def resolve_pins(GPIO):
-    """Return a dict of channel ids {oe, estop, k1, k2} in whatever numbering
-    mode Jetson.GPIO is in.
+# pins
 
-    Adafruit Blinka (which the PCA9685 driver uses for I2C) imports Jetson.GPIO
-    and locks it to TEGRA_SOC mode, and Jetson.GPIO refuses a second setmode().
-    So import Blinka first, then name the same header pins in its mode.
-    """
+# Return a dict of channel ids {oe, estop, k1, k2} in whatever numbering
+# mode Jetson.GPIO is in.
+#
+# Adafruit Blinka (which the PCA9685 driver uses for I2C) imports Jetson.GPIO
+# and locks it to TEGRA_SOC mode, and Jetson.GPIO refuses a second setmode().
+# So import Blinka first, then name the same header pins in its mode.
+def resolve_pins(GPIO):
     try:
         import board  # Blinka: sets Jetson.GPIO to its own mode on import
     except Exception:
@@ -119,19 +119,20 @@ def resolve_pins(GPIO):
     return {"oe": board.D6.id, "estop": board.D22.id, "k1": board.D4.id, "k2": board.D17.id}
 
 
+# Old 3-tuple form (k1, k2, estop), kept for relay_polarity_test.py.
 def _resolve_pins(GPIO):
-    """Old 3-tuple form (k1, k2, estop), kept for relay_polarity_test.py."""
     p = resolve_pins(GPIO)
     return p["k1"], p["k2"], p["estop"]
 
 
+# Raised by PowerBox.check() once the E-stop has tripped.
 class EStop(Exception):
-    """Raised by PowerBox.check() once the E-stop has tripped."""
+    pass
 
 
 class PowerBox:
+    # on_safe: callable that turns every PWM output off (called on SAFE / exit).
     def __init__(self, dry_run=False, on_safe=None):
-        """on_safe: callable that turns every PWM output off (called on SAFE / exit)."""
         self.dry_run = dry_run
         self.on_safe = on_safe
         self.state = "WAIT"
@@ -167,14 +168,14 @@ class PowerBox:
             self._go_safe("E-stop is pressed (or its cable is cut). Release it and start again.")
         threading.Thread(target=self._watch, daemon=True).start()
 
-    # --- E-stop -----------------------------------------------------------------
+    # E-stop
     def _pressed_level(self):
         if ESTOP_PRESSED_LEVEL not in ("low", "high"):
             raise ValueError(f"ESTOP_PRESSED_LEVEL must be 'low' or 'high', not {ESTOP_PRESSED_LEVEL!r}")
         return self.GPIO.LOW if ESTOP_PRESSED_LEVEL == "low" else self.GPIO.HIGH
 
+    # True only if pin 15 stays at the pressed level for the whole debounce window.
     def _estop_pressed(self):
-        """True only if pin 15 stays at the pressed level for the whole debounce window."""
         end = time.monotonic() + DEBOUNCE_S
         while time.monotonic() < end:
             if self.GPIO.input(self.estop) != self._pressed_level():
@@ -189,9 +190,10 @@ class PowerBox:
                 return
             time.sleep(0.005)
 
-    # --- states -----------------------------------------------------------------
+    # states
+
+    # OE HIGH (all servo signals off) and, if wired, relays off.
     def outputs_off(self):
-        """OE HIGH (all servo signals off) and, if wired, relays off."""
         if self.GPIO is None:
             return
         try:
@@ -222,20 +224,20 @@ class PowerBox:
     def closed(self):
         return self._closed
 
+    # Call in every control loop. Raises EStop once the E-stop has tripped
+    # or the box has been shut down (Ctrl-C, SIGTERM).
     def check(self):
-        """Call in every control loop. Raises EStop once the E-stop has tripped
-        or the box has been shut down (Ctrl-C, SIGTERM)."""
         if self.tripped.is_set() or self._closed:
             raise EStop()
 
+    # time.sleep that wakes up and raises EStop if the E-stop trips.
     def sleep(self, seconds):
-        """time.sleep that wakes up and raises EStop if the E-stop trips."""
         if self.tripped.wait(seconds):
             raise EStop()
 
+    # WAIT to ARMED. write_home() must put every servo channel at its safe
+    # home pulse; it runs BEFORE OE goes LOW (signals on).
     def arm(self, write_home):
-        """WAIT -> ARMED. write_home() must put every servo channel at its safe
-        home pulse; it runs BEFORE OE goes LOW (signals on)."""
         self.check()
         if self.dry_run:
             self.state = "ARMED"
@@ -264,8 +266,8 @@ class PowerBox:
             input("[power] Press RESET if needed, then Enter here once servo power is on... ")
             self.check()
 
+    # Signals off, PWM off, release the E-stop pin. Safe to call more than once.
     def close(self):
-        """Signals off, PWM off, release the E-stop pin. Safe to call more than once."""
         if self._closed:
             return
         self._closed = True

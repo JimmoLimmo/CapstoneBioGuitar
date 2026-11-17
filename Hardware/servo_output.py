@@ -42,14 +42,14 @@ from power_box import EStop, PowerBox  # noqa: E402
 import calibration  # noqa: E402
 from run_log import RunLog  # noqa: E402
 
-# --- wrist servos (defaults; bench values come from calibration.json) --------
+# wrist servos (defaults; bench values come from calibration.json)
 # The marionette wrist has four MG995 servos (rated 4.8-7.2 V, run at 6 V),
 # two per axis. Names say which
 # way that servo PULLS the wrist when it reels in (see wrist_kinematics.py).
 #   board          which PCA9685: "hv" = 8.4 V board (0x40), "lv" = 5 V board (0x41, going to 6.4 V).
 #   channel        PCA9685 channel 0-15 on that board.
 #   neutral_pulse  pulse with the wrist sitting straight (0 deg / 0 deg) and
-#                  this servo's tendon just snug -- not slack, not straining.
+#                  this servo's tendon just snug, not slack, not straining.
 #   reel_in_sign   +1 if a LARGER pulse winds the string in, -1 if a smaller
 #                  one does. Depends on which way the servo is mounted.
 #   min/max_pulse  hard limits for this servo: jog until the wrist reaches its
@@ -68,16 +68,16 @@ WRIST_SERVOS = {
 calibration.apply("wrist", WRIST_SERVOS)
 
 # 500-2500 us over ~180 deg (the CDR servo test bench range; MG995s vary, so
-# confirm it on the bench -- if it differs, change this).
+# confirm it on the bench, if it differs, change this).
 # At 50 Hz one duty-cycle count is 20000/65535 us, so 180 deg = 1638..8191.
 # Check it once: command neutral +/- 1638 counts and confirm the horn turns
 # about 45 deg each way. Adjust this if it doesn't.
 PULSE_PER_SERVO_DEG = (8191 - 1638) / 180.0
 
-# --- non-wrist channels ------------------------------------------------------
+# non-wrist channels
 # finger servos: fingers.py (FINGER_SERVOS); poses: Sim/finger_motion.py
 OTHER_CHANNELS = {
-    "wrist_PRO": {  # forearm rotation -- not actuated in the CDR design; leave None
+    "wrist_PRO": {  # forearm rotation, not actuated in the CDR design; leave None
         "board": "lv", "channel": None,
         "deg_lo": -140.0, "pulse_lo": 1638,
         "deg_hi": 60.0, "pulse_hi": 8191,
@@ -87,7 +87,7 @@ OTHER_CHANNELS = {
 PULSE_ABS_MIN = 1638   # last-resort clamp on every channel, on top of per-servo limits
 PULSE_ABS_MAX = 8191
 
-I2C_BUS = 7            # pins 3/5 on the Orin Nano -- confirm with: sudo i2cdetect -y -r 7
+I2C_BUS = 7            # pins 3/5 on the Orin Nano, confirm with: sudo i2cdetect -y -r 7
 BOARDS = {
     # As wired on the box (checked 2026-11-10 with i2cdetect: 40 and 41).
     "lv": 0x41,        # 5 V board (going to 6.4 V): wrist ch 10-13, left hand ch 0-4
@@ -104,19 +104,19 @@ def clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
-# --- conversion --------------------------------------------------------------
+# conversion
 
+# Spool angle (deg, + = reel in) to pulse for one wrist servo, clamped
+# to its own limits and then to the absolute range. Returns (pulse, clamped?).
 def servo_pulse(name, spool_deg):
-    """Spool angle (deg, + = reel in) -> pulse for one wrist servo, clamped
-    to its own limits and then to the absolute range. Returns (pulse, clamped?)."""
     cfg = WRIST_SERVOS[name]
     raw = cfg["neutral_pulse"] + cfg["reel_in_sign"] * spool_deg * PULSE_PER_SERVO_DEG
     pulse = clamp(clamp(raw, cfg["min_pulse"], cfg["max_pulse"]), PULSE_ABS_MIN, PULSE_ABS_MAX)
     return int(round(pulse)), abs(pulse - raw) > 1
 
 
+# (deviation, flexion) to ({servo_name: pulse}, [servos that hit a limit]).
 def wrist_pulses(dev_deg, flex_deg):
-    """(deviation, flexion) -> ({servo_name: pulse}, [servos that hit a limit])."""
     pulses, clamped = {}, []
     for name, deg in wk.servo_angles(dev_deg, flex_deg).items():
         pulses[name], hit = servo_pulse(name, deg)
@@ -135,11 +135,11 @@ def is_calibrated():
     return all(c["channel"] is not None and c["neutral_pulse"] is not None for c in WRIST_SERVOS.values())
 
 
-# --- output ------------------------------------------------------------------
+# output
 
+# Both PCA9685 boards, or a stand-in that only remembers what it was told
+# (--dry-run). Channels are addressed as (board, channel), board = "lv"/"hv".
 class ServoBus:
-    """Both PCA9685 boards, or a stand-in that only remembers what it was told
-    (--dry-run). Channels are addressed as (board, channel), board = "lv"/"hv"."""
 
     def __init__(self, dry_run, boards=("lv", "hv")):
         self.dry_run = dry_run
@@ -168,13 +168,13 @@ class ServoBus:
         if not self.dry_run:
             self.pca[board].channels[channel].duty_cycle = pulse
 
+    # Tell the sim, if one is listening, what the hand was just commanded to do.
     def publish(self, dev_deg, flex_deg, fingers=None):
-        """Tell the sim, if one is listening, what the hand was just commanded to do."""
         if self.sim:
             self.sim.send(dev_deg, flex_deg, self.finger_pose if fingers is None else fingers)
 
+    # Stop pulsing every channel we used, the servos go limp.
     def release(self):
-        """Stop pulsing every channel we used -- the servos go limp."""
         for board, channel in list(self.last):
             if not self.dry_run:
                 self.pca[board].channels[channel].duty_cycle = 0
@@ -189,9 +189,9 @@ def write_wrist(bus, dev_deg, flex_deg):
     return pulses
 
 
+# Move the wrist between two (dev, flex) poses along a smoothstep, going
+# through the kinematics every step so both strings of a pair stay matched.
 def ease_wrist(bus, start, end, seconds=EASE_SECONDS, power=None):
-    """Move the wrist between two (dev, flex) poses along a smoothstep, going
-    through the kinematics every step so both strings of a pair stay matched."""
     steps = max(1, int(seconds * CONTROL_HZ))
     for k in range(1, steps + 1):
         s = smooth(k / steps)
@@ -204,8 +204,8 @@ def ease_wrist(bus, start, end, seconds=EASE_SECONDS, power=None):
             time.sleep(1.0 / CONTROL_HZ)
 
 
+# Move the fingers between two poses along a smoothstep, wrist held straight.
 def ease_fingers(bus, start, end, seconds, power=None):
-    """Move the fingers between two poses along a smoothstep, wrist held straight."""
     steps = max(1, int(seconds * CONTROL_HZ))
     for k in range(1, steps + 1):
         if power is not None:
@@ -217,7 +217,7 @@ def ease_fingers(bus, start, end, seconds, power=None):
             time.sleep(1.0 / CONTROL_HZ)
 
 
-# --- checks ------------------------------------------------------------------
+# checks
 
 def missing_calibration(wrist_only):
     problems = []
@@ -244,8 +244,8 @@ def missing_calibration(wrist_only):
     return problems
 
 
+# What the strum asks of each wrist servo, printed before anything moves.
 def demand_report(schedule, speed):
-    """What the strum asks of each wrist servo, printed before anything moves."""
     label = f" at --speed {speed}" if speed != 1.0 else ""
     print(f"[servo] wrist servo demand for this schedule{label}:")
     worst = 0.0
@@ -267,7 +267,7 @@ def demand_report(schedule, speed):
                   "strings stop matching there -- widen the limits or shrink the sweep.")
 
 
-# --- main --------------------------------------------------------------------
+# main
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -320,8 +320,8 @@ def main():
     dev, flex = 0.0, 0.0
     run_log = RunLog(1.0 / CONTROL_HZ, wk.SERVO_NAMES, keep_rows=args.log)
 
+    # Safe HOME pulses on every channel we drive, written before power is allowed.
     def write_home():
-        """Safe HOME pulses on every channel we drive, written before power is allowed."""
         if calibrated:
             write_wrist(bus, 0.0, 0.0)
         if not args.wrist_only:

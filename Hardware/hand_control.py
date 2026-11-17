@@ -82,7 +82,7 @@ class Hand:
         self.wrist_pose = (0.0, 0.0)
         self.finger_pose = dict(fm.OPEN)
 
-    # --- setup checks --------------------------------------------------------
+    # setup checks
     def calibration_problems(self):
         problems = _wrist_problems() if self.use_wrist else []
         problems += fh.missing_calibration(self.fingers)
@@ -95,8 +95,8 @@ class Hand:
             problems.append(f"(board, channel) {dupes} assigned to more than one servo")
         return problems
 
+    # Refuse if wrist and fingers share a channel number while both boards share an address.
     def _check_shared_address(self, boards):
-        """Refuse if wrist and fingers share a channel number while both boards share an address."""
         by_address = {}
         for b in boards:
             by_address.setdefault(so.BOARDS[b], []).append(b)
@@ -117,7 +117,7 @@ class Hand:
                 raise SystemExit(msg + f"\n[hand]   channel(s) {clash} are used on both boards -- refusing to run.")
             print(msg + " Channels don't overlap, so continuing.")
 
-    # --- low level -----------------------------------------------------------
+    # low level
     def _write(self):
         if self.wrist_live:
             so.write_wrist(self.bus, *self.wrist_pose)
@@ -125,24 +125,25 @@ class Hand:
             fh.write_fingers(self.bus, self.finger_pose, self.fingers)
         self.bus.publish(*self.wrist_pose, fingers=self.finger_pose)
 
+    # Check the E-stop, write the current pose, wait one control period.
     def tick(self):
-        """Check the E-stop, write the current pose, wait one control period."""
         self.power.check()
         self._write()
         if self.realtime:
             self.power.sleep(1.0 / CONTROL_HZ)
 
+    # What the servos are being sent right now (calibrated servos only).
     def pulses(self):
-        """What the servos are being sent right now (calibrated servos only)."""
         out = {}
         if self.wrist_live:
             out.update({f"wrist {n}": p for n, p in so.wrist_pulses(*self.wrist_pose)[0].items()})
         out.update(fh.finger_pulses(self.finger_pose, self.fingers))
         return out
 
-    # --- motions ---------------------------------------------------------------
+    # motions
+
+    # Servo signals on (after Enter; servo power comes from the box's RESET) with every servo at home.
     def arm(self):
-        """Servo signals on (after Enter; servo power comes from the box's RESET) with every servo at home."""
         def write_home():
             self.wrist_pose = (0.0, 0.0)
             self.finger_pose = dict(fm.OPEN)
@@ -150,8 +151,8 @@ class Hand:
         self.power.arm(write_home)
         self._write()
 
+    # Ease to a new pose. wrist = (deviation, flexion) deg; fingers = {servo name: curl}.
     def move(self, wrist=None, fingers=None, seconds=EASE_SECONDS):
-        """Ease to a new pose. wrist = (deviation, flexion) deg; fingers = {servo name: curl}."""
         start_w, start_f = self.wrist_pose, dict(self.finger_pose)
         end_w = start_w
         if wrist is not None and self.use_wrist:
@@ -166,13 +167,13 @@ class Hand:
             self.finger_pose = fm.blend(start_f, end_f, s)
             self.tick()
 
+    # Stay put, still checking the E-stop and refreshing the sim.
     def hold(self, seconds):
-        """Stay put, still checking the E-stop and refreshing the sim."""
         for _ in range(max(1, int(round(seconds * CONTROL_HZ)))):
             self.tick()
 
+    # Play a strum schedule, fingers held. Returns per-stroke scheduled vs commanded times (s).
     def play(self, schedule, speed=1.0, lead_in=EASE_SECONDS):
-        """Play a strum schedule, fingers held. Returns per-stroke scheduled vs commanded times (s)."""
         if not schedule:
             return []
         self.move(wrist=wrist_at(schedule, -1.0)[:2], seconds=lead_in)
@@ -209,9 +210,10 @@ class Hand:
     def park(self, seconds=EASE_SECONDS):
         self.move(wrist=(0.0, 0.0), fingers=fm.OPEN, seconds=seconds)
 
-    # --- shutdown --------------------------------------------------------------
+    # shutdown
+
+    # Park (only on a clean finish), then signals off and PWM off. Always safe to call.
     def close(self, park=True):
-        """Park (only on a clean finish), then signals off and PWM off. Always safe to call."""
         if park and self.power.state == "ARMED" and not self.power.tripped.is_set() and not self.power.closed:
             try:
                 self.park()

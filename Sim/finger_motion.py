@@ -10,8 +10,8 @@ SEGMENTS = ("base", "tip")
 SERVO_NAMES = tuple(f"{f}_{s}" for f in FINGERS for s in SEGMENTS)
 
 
+# make_pose(0.0, index=0.5, thumb=(0.7, 0.4)): a number sets both segments, a pair sets (base, tip).
 def make_pose(default=0.0, **fingers):
-    """make_pose(0.0, index=0.5, thumb=(0.7, 0.4)): a number sets both segments, a pair sets (base, tip)."""
     pose = {name: float(default) for name in SERVO_NAMES}
     for finger, value in fingers.items():
         if finger not in FINGERS:
@@ -26,8 +26,8 @@ def clamp_pose(pose):
     return {name: max(0.0, min(1.0, float(curl))) for name, curl in pose.items()}
 
 
+# Pose part way from a to b (s = 0..1). Servos missing from either pose keep the other's value.
 def blend(a, b, s):
-    """Pose part way from a to b (s = 0..1). Servos missing from either pose keep the other's value."""
     out = {}
     for n in set(a) | set(b):
         x = a.get(n, b.get(n))
@@ -36,7 +36,7 @@ def blend(a, b, s):
     return out
 
 
-# --- named poses (starting guesses; poses saved from hand_console.py replace them) ---
+# named poses (starting guesses; poses saved from hand_console.py replace them)
 OPEN = make_pose(0.0)
 RELAXED = make_pose(0.2)
 FIST = make_pose(1.0)
@@ -52,8 +52,8 @@ NAMED_POSES = {
 }
 
 
+# Replace or add a named pose, e.g. one tuned and saved on the bench. "open" is home and stays fixed.
 def set_pose(name, pose):
-    """Replace or add a named pose, e.g. one tuned and saved on the bench. "open" is home and stays fixed."""
     if not name.isidentifier() or name != name.lower():
         raise ValueError(f"pose names are lower-case words like pick_grip, not {name!r}")
     if name == "open":
@@ -69,7 +69,7 @@ def set_pose(name, pose):
         NAMED_POSES[name] = new
 
 
-# --- sim mapping: MPL joint angle (deg) at curl 1.0 ---
+# sim mapping: MPL joint angle (deg) at curl 1.0
 SIM_FULL_CURL_DEG = {
     "base": {"MCP": 85.0},
     "tip": {"PIP": 98.0, "DIP": 70.0},
@@ -80,8 +80,8 @@ SIM_THUMB_FULL_CURL_DEG = {
 }
 
 
+# Finger pose to {MPL joint name: radians} for the PyBullet hand.
 def sim_joints(pose):
-    """Finger pose -> {MPL joint name: radians} for the PyBullet hand."""
     joints = {}
     for name, curl in clamp_pose(pose).items():
         finger, segment = name.split("_")

@@ -11,7 +11,7 @@ import sys
 
 from finger_motion import sim_joints
 
-# song 
+# song
 SONG_FILE = "Parsing/inputs/Apollo-Live.gp3"   # .gp3/.gp4/.gp5 relative to the repo root, a bare filename, or None
 # SONG_FILE = "Parsing/inputs/DragonForce - Through the Fire and Flames.gp5"
 # SONG_FILE = None
@@ -61,8 +61,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SONG_DIR = os.path.join(REPO_ROOT, "Parsing", "inputs")
 
 
+# Accepts a repo-relative path, a bare filename, or a stray leading slash.
 def find_song(name):
-    """Accepts a repo-relative path, a bare filename, or a stray leading slash."""
     for candidate in (name,
                       os.path.join(REPO_ROOT, name.lstrip("/\\")),
                       os.path.join(SONG_DIR, os.path.basename(name))):
@@ -71,8 +71,8 @@ def find_song(name):
     return None
 
 
+# (onsets_from_zero, beats_into_measure, track_names). Rests are skipped; they just widen the gap.
 def song_onsets(path, track):
-    """(onsets_from_zero, beats_into_measure, track_names). Rests are skipped; they just widen the gap."""
     sys.path.insert(0, os.path.join(REPO_ROOT, "Parsing"))
     from GuitarProReader import GuitarProSong
 
@@ -92,14 +92,14 @@ def fallback_onsets(bpm=None):
     return [i * step for i in range(FALLBACK_STRUMS)]
 
 
+# Evenly spaced onsets: 0.5 beats per stroke = eighth notes (two strums per beat).
 def tempo_onsets(bpm, strokes, beats_per_stroke=0.5):
-    """Evenly spaced onsets: 0.5 beats per stroke = eighth notes (two strums per beat)."""
     step = 60.0 / bpm * beats_per_stroke
     return [i * step for i in range(strokes)]
 
 
+# ["D", "U"], "DU" or "auto" to a list of "D"/"U", or the string "auto".
 def parse_directions(value):
-    """["D", "U"], "DU" or "auto" -> a list of "D"/"U", or the string "auto"."""
     if isinstance(value, str):
         if value.strip().lower() == "auto":
             return "auto"
@@ -110,9 +110,9 @@ def parse_directions(value):
     return value
 
 
+# Pendulum strumming: down on the even slots of each measure, up on the odd ones.
+# Slots are eighth notes, or sixteenths if any note falls between eighths.
 def directions_from_positions(positions):
-    """Pendulum strumming: down on the even slots of each measure, up on the odd ones.
-    Slots are eighth notes, or sixteenths if any note falls between eighths."""
     def off_grid(grid):
         return any(abs(p / grid - round(p / grid)) > 0.05 for p in positions)
 
@@ -120,8 +120,8 @@ def directions_from_positions(positions):
     return ["D" if int(round(p / grid)) % 2 == 0 else "U" for p in positions]
 
 
+# "D-DU-UDU" to (slots in the pattern, [(slot, direction)]). "-" or "." is a slot with no stroke.
 def parse_pattern(text):
-    """"D-DU-UDU" -> (slots in the pattern, [(slot, direction)]). "-" or "." is a slot with no stroke."""
     slots = [c for c in str(text).upper() if not c.isspace()]
     if not slots or set(slots) - set("DU-."):
         raise ValueError('a pattern is made of D, U and - (no stroke), e.g. "D-DU-UDU"')
@@ -131,8 +131,8 @@ def parse_pattern(text):
     return len(slots), strokes
 
 
+# (onsets, directions) for a pattern played `repeats` times, PATTERN_SLOT_BEATS per character.
 def pattern_onsets(pattern, bpm, repeats=None):
-    """(onsets, directions) for a pattern played `repeats` times, PATTERN_SLOT_BEATS per character."""
     length, strokes = parse_pattern(pattern)
     repeats = PATTERN_REPEATS if repeats is None else repeats
     step = 60.0 / bpm * PATTERN_SLOT_BEATS
@@ -141,14 +141,13 @@ def pattern_onsets(pattern, bpm, repeats=None):
     return onsets, [direction for _ in range(repeats) for _, direction in strokes]
 
 
+# Note times (s) to schedule; directions cycle per stroke (None = STRUM_DIRECTIONS).
+#
+# Each strike is placed so the pick meets the strings on the note
+# (CONTACT_POINT of the way through the strike), and is shortened where notes
+# are close together so strikes never overlap. The first strike still starts
+# at onsets[0].
 def schedule_from_onsets(onsets, directions=None):
-    """Note times (s) -> schedule; directions cycle per stroke (None = STRUM_DIRECTIONS).
-
-    Each strike is placed so the pick meets the strings on the note
-    (CONTACT_POINT of the way through the strike), and is shortened where notes
-    are close together so strikes never overlap. The first strike still starts
-    at onsets[0].
-    """
     directions = parse_directions(STRUM_DIRECTIONS if directions is None else directions)
     if directions == "auto":
         directions = ["D", "U"]
@@ -169,12 +168,11 @@ def schedule_from_onsets(onsets, directions=None):
     return schedule
 
 
+# (schedule, where it came from). Anything left as None uses the constants at the top of this file.
+#
+# A pattern, or a bpm with no song, strums at constant tempo; so does song="none".
+# Raises ValueError for settings that make no sense.
 def build_schedule(song=None, track=None, bpm=None, pattern=None, repeats=None, directions=None):
-    """(schedule, where it came from). Anything left as None uses the constants at the top of this file.
-
-    A pattern, or a bpm with no song, strums at constant tempo; so does song="none".
-    Raises ValueError for settings that make no sense.
-    """
     directions = parse_directions(STRUM_DIRECTIONS if directions is None else directions)
     if bpm is not None and not (20 <= bpm <= 300):
         raise ValueError("bpm must be between 20 and 300")
@@ -230,8 +228,8 @@ def build_schedule(song=None, track=None, bpm=None, pattern=None, repeats=None, 
     return schedule_from_onsets(onsets, directions), source
 
 
+# --song / --track / --bpm / --pattern / --repeats / --directions, for any script that plays a schedule.
 def add_song_args(parser):
-    """--song / --track / --bpm / --pattern / --repeats / --directions, for any script that plays a schedule."""
     group = parser.add_argument_group("what to play (defaults are the constants in Sim/strum_motion.py)")
     group.add_argument("--song", help="Guitar Pro file: a name in Parsing/inputs or a path; 'none' = constant tempo")
     group.add_argument("--track", type=int, help="track number in the song")
@@ -250,9 +248,9 @@ def schedule_from_args(args):
 
 
 # pose
-# A down-stroke starts at the UP angle and sweeps to the DOWN angle; an up-stroke mirrors it. 
-# So the follow-through of one stroke is already the ready position of the opposite stroke, and recovery only has distance to travel when two strokes repeat the same direction  
-# which is exactly when the return trip would otherwise drag back through the strings. 
+# A down-stroke starts at the UP angle and sweeps to the DOWN angle; an up-stroke mirrors it.
+# So the follow-through of one stroke is already the ready position of the opposite stroke, and recovery only has distance to travel when two strokes repeat the same direction
+# which is exactly when the return trip would otherwise drag back through the strings.
 # The lift scales with that distance, so alternating strumming lifts nothing at all.
 
 def ready_yaw(direction):
@@ -263,10 +261,10 @@ def follow_yaw(direction):
     return WRIST_YAW_DOWN_DEG if direction == "D" else WRIST_YAW_UP_DEG
 
 
+# (yaw_deg, flex_deg, stroke_index) for time t. yaw drives wrist_UDEV,
+# flex drives wrist_FLEX, these are the two DOFs a real strum needs to
+# track continuously. stroke_index is -1 before the first stroke.
 def wrist_at(schedule, t):
-    """(yaw_deg, flex_deg, stroke_index) for time t. yaw drives wrist_UDEV,
-    flex drives wrist_FLEX -- these are the two DOFs a real strum needs to
-    track continuously. stroke_index is -1 before the first stroke."""
     if not schedule or t < schedule[0][0]:
         return ready_yaw(schedule[0][1] if schedule else "D"), 0.0, -1
 
@@ -290,9 +288,9 @@ def wrist_at(schedule, t):
     return start + (end - start) * smooth(u), lift * math.sin(math.pi * u), i
 
 
+# Full 16-joint target dict in RADIANS, keyed by MJCF joint name.
+# fingers = a finger_motion pose; None = the default fist.
 def pose(yaw_deg, flex_deg, fingers=None):
-    """Full 16-joint target dict in RADIANS, keyed by MJCF joint name.
-    fingers = a finger_motion pose; None = the default fist."""
     if fingers is None:
         p = {name: d(angle * GRIP_CURL) for name, angle in FIST_POSE.items()}
     else:

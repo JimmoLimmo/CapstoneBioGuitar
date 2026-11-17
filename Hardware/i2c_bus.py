@@ -24,8 +24,8 @@ def open_bus(bus_id, frequency=400000):
                          "      Copy adafruit_extended_bus.py over from last year's Jetson, or install "
                          "adafruit-blinka.")
 
+    # Same as adafruit_extended_bus.ExtendedI2C: a busio.I2C on /dev/i2c-<bus_id>.
     class _BusI2C(busio.I2C):
-        """Same as adafruit_extended_bus.ExtendedI2C: a busio.I2C on /dev/i2c-<bus_id>."""
 
         def __init__(self, bus, freq):  # skip busio's board-pin lookup
             self._i2c = LinuxI2C(bus, mode=LinuxI2C.MASTER, baudrate=freq)

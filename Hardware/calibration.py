@@ -36,8 +36,8 @@ def load():
     return data
 
 
+# ValueError if `value` can't be a servo's `key`.
 def check(key, value):
-    """ValueError if `value` can't be a servo's `key`."""
     whole = type(value) is int
     if key == "board":
         ok = value in BOARD_NAMES
@@ -53,8 +53,8 @@ def check(key, value):
         raise ValueError(f"{key} = {value!r} is not valid")
 
 
+# Overwrite the defaults in `table` ({servo: {key: value}}) with what the file holds.
 def apply(section, table):
-    """Overwrite the defaults in `table` ({servo: {key: value}}) with what the file holds."""
     for name, values in load().get(section, {}).items():
         if name not in table or not isinstance(values, dict):
             print(f"[calibration] {section}.{name} in {path()} is not a servo here; ignored.")
@@ -78,8 +78,8 @@ def apply_poses(finger_motion):
             raise SystemExit(f"[calibration] {path()}: pose {name!r}: {e}")
 
 
+# Merge `values` into section.name and write the file. Returns the entry as saved.
 def save(section, name, values):
-    """Merge `values` into section.name and write the file. Returns the entry as saved."""
     if section != "poses":
         for key, value in values.items():
             check(key, value)
@@ -93,8 +93,8 @@ def save(section, name, values):
     return dict(entry)
 
 
+# Under sudo, give a file we made back to the user who ran sudo.
 def hand_back(file_path):
-    """Under sudo, give a file we made back to the user who ran sudo."""
     uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
     if uid and gid and hasattr(os, "chown"):
         try:

@@ -35,8 +35,8 @@ calibration.apply("fingers", FINGER_SERVOS)
 calibration.apply_poses(finger_motion)
 
 
+# Servo names belonging to the given fingers, e.g. ("index",) to index_base, index_tip.
 def servos_for(fingers):
-    """Servo names belonging to the given fingers, e.g. ("index",) -> index_base, index_tip."""
     unknown = set(fingers) - set(FINGERS)
     if unknown:
         raise ValueError(f"unknown finger(s) {sorted(unknown)}; use {FINGERS}")
@@ -63,8 +63,8 @@ def missing_calibration(fingers=FINGERS):
     return problems
 
 
+# [(board, channel)] used by these fingers (calibrated channels only).
 def channels(fingers=FINGERS):
-    """[(board, channel)] used by these fingers (calibrated channels only)."""
     return [(FINGER_SERVOS[n]["board"], FINGER_SERVOS[n]["channel"])
             for n in servos_for(fingers) if FINGER_SERVOS[n]["channel"] is not None]
 
@@ -76,8 +76,8 @@ def finger_pulse(name, curl):
     return int(round(max(PULSE_ABS_MIN, min(PULSE_ABS_MAX, pulse))))
 
 
+# {servo name: pulse} for the calibrated servos of `fingers` in `pose`.
 def finger_pulses(pose, fingers=FINGERS):
-    """{servo name: pulse} for the calibrated servos of `fingers` in `pose`."""
     pose = clamp_pose(pose)
     return {n: finger_pulse(n, pose.get(n, 0.0)) for n in servos_for(fingers) if is_calibrated(n)}
 

@@ -43,8 +43,8 @@ class RunLog:
                 f"worst {self.worst * 1000:.1f} ms, {self.missed} more than one "
                 f"{self.period * 1000:.0f} ms period late")
 
+    # Write the CSV and return its path. Dry runs go to results/dry_run/.
     def save(self, label, dry_run=False, folder=None):
-        """Write the CSV and return its path. Dry runs go to results/dry_run/."""
         folder = folder or (os.path.join(RESULTS_DIR, "dry_run") if dry_run else RESULTS_DIR)
         os.makedirs(folder, exist_ok=True)
         slug = re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-")[:40] or "run"

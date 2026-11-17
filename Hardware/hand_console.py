@@ -37,8 +37,8 @@ class Console:
         self.hand = hand
         self.seconds = 0.6
 
+    # Run one command. Returns False when it's time to quit.
     def run(self, line):
-        """Run one command. Returns False when it's time to quit."""
         words = line.split()
         if not words:
             return True

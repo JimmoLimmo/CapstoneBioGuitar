@@ -64,14 +64,14 @@ def entry_line(name):
     return f"{name:12}" + "  ".join(f"{k}={'-' if v is None else v}" for k, v in cfg.items())
 
 
+# Other servos already assigned this board address and channel.
 def shared_with(name, board, channel):
-    """Other servos already assigned this board address and channel."""
     return [other for table in TABLES.values() for other, cfg in table.items()
             if other != name and cfg["channel"] == channel and so.BOARDS.get(cfg["board"]) == so.BOARDS[board]]
 
 
+# Run a save / show command for a named servo. False if `words` isn't one.
 def command(section, name, board, channel, pulse, words):
-    """Run a save / show command for a named servo. False if `words` isn't one."""
     values = None
     if len(words) == 1 and words[0] in SAVE_KEYS[section]:
         values = {SAVE_KEYS[section][words[0]]: pulse}

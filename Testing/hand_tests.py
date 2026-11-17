@@ -20,7 +20,7 @@ from strum_motion import schedule_from_onsets, tempo_onsets  # noqa: E402
 
 RESULTS_DIR = os.path.join(HERE, "results")
 
-# --- acceptance numbers from the CDR -----------------------------------------
+# acceptance numbers from the CDR
 FINGER_SPACINGS_IN = (0.25, 0.20, 0.15, 0.10)
 FINGER_TOLERANCE_IN = 0.02
 ATTEMPTS_PER_TARGET = 10
@@ -47,22 +47,22 @@ class Quit(Exception):
     pass
 
 
-# --- small helpers -----------------------------------------------------------
+# small helpers
 
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# float, or None for blank / not a number (CSV cells come back as text).
 def num(value):
-    """float, or None for blank / not a number (CSV cells come back as text)."""
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
 
 
+# CSV that is flushed after every row, so an E-stop never loses data.
 class Log:
-    """CSV that is flushed after every row, so an E-stop never loses data."""
 
     def __init__(self, name, fields, dry_run=False):
         # Rehearsal files go in their own folder so they never mix with real data.
@@ -86,8 +86,8 @@ class Log:
         print(f"[test] results saved to {os.path.relpath(self.path, REPO_ROOT)}")
 
 
+# A number, or None if skipped (fill it in later from the video).
 def ask_number(prompt):
-    """A number, or None if skipped (fill it in later from the video)."""
     while True:
         raw = input(prompt).strip().lower()
         if raw in ("q", "quit"):
@@ -100,8 +100,8 @@ def ask_number(prompt):
             print("  type a number, Enter to skip, or q to stop")
 
 
+# ('ok' | 'missed' | 'unintended' | 'both', note).
 def ask_cycle_result(auto):
-    """('ok' | 'missed' | 'unintended' | 'both', note)."""
     if auto:
         return "ok", "SIMULATED"
     codes = {"": "ok", "y": "ok", "m": "missed", "u": "unintended", "b": "both"}
@@ -115,8 +115,8 @@ def ask_cycle_result(auto):
     return codes[raw], note
 
 
+# Linear interpolation through (x, y) points sorted by x, clamped at the ends.
 def interp(points, x):
-    """Linear interpolation through (x, y) points sorted by x, clamped at the ends."""
     if x <= points[0][0]:
         return points[0][1]
     for (x0, y0), (x1, y1) in zip(points, points[1:]):
@@ -132,22 +132,22 @@ def make_hand(args, **kwargs):
                 realtime=True if args.realtime else None, **kwargs)
 
 
-# --- fingertip position & accuracy ---------------------------------------------
+# fingertip position & accuracy
 
 def map_path(servo):
     return os.path.join(RESULTS_DIR, f"finger_map_{servo}.json")
 
 
+# Always return to the start first, so every target is approached the same way.
 def go_to(hand, servo, curl):
-    """Always return to the start first, so every target is approached the same way."""
     hand.move(fingers={servo: 0.0}, seconds=0.5)
     hand.hold(0.2)
     hand.move(fingers={servo: curl}, seconds=0.6)
     hand.hold(SETTLE_SECONDS)
 
 
+# Step through the servo's travel and record where the fingertip marker sits.
 def measure_map(hand, servo, auto):
-    """Step through the servo's travel and record where the fingertip marker sits."""
     print(f"[finger] mapping {servo}: read the fingertip marker on the ruler at each step (inches).")
     points = []
     for curl in MAP_CURLS:
@@ -181,8 +181,8 @@ def load_map(servo):
         return None
 
 
+# Evenly spaced targets centred in the reachable range, kept clear of both ends.
 def make_targets(lo, hi, spacing, max_targets):
-    """Evenly spaced targets centred in the reachable range, kept clear of both ends."""
     margin = FINGER_TOLERANCE_IN * 1.5
     usable = (hi - margin) - (lo + margin)
     if usable < spacing:
@@ -192,8 +192,8 @@ def make_targets(lo, hi, spacing, max_targets):
     return [first + i * spacing for i in range(count)]
 
 
+# Print the CDR numbers per target. True if the 0.10 in spacing passed.
 def summarize_finger(rows):
-    """Print the CDR numbers per target. True if the 0.10 in spacing passed."""
     groups = {}
     for r in rows:
         groups.setdefault((num(r["spacing_in"]), num(r["target_in"])), []).append(r)
@@ -284,10 +284,10 @@ def cmd_finger(args):
                 log.close()
 
 
-# --- strumming ----------------------------------------------------------------------
+# strumming
 
+# Play one cycle: (target s, commanded s, worst lateness ms, per-stroke log).
 def run_cycle(hand, bpm, pattern, strokes, speed=1.0):
-    """Play one cycle: (target s, commanded s, worst lateness ms, per-stroke log)."""
     schedule = schedule_from_onsets(tempo_onsets(bpm, strokes), list(pattern))
     log = hand.play(schedule, speed=speed)
     target = log[-1]["scheduled_s"] - log[0]["scheduled_s"]
@@ -349,10 +349,10 @@ def cmd_strum(args):
             log.close()
 
 
-# --- tempo and speed -------------------------------------------------------------------
+# tempo and speed
 
+# Score a tempo CSV. Needs contact_frame filled in for the real result.
 def summarize_tempo(rows, fps):
-    """Score a tempo CSV. Needs contact_frame filled in for the real result."""
     cycles = {}
     for r in rows:
         cycles.setdefault(int(num(r["cycle"])), []).append(r)
@@ -437,7 +437,7 @@ def cmd_tempo(args):
             log.close()
 
 
-# --- report ------------------------------------------------------------------------------
+# report
 
 def cmd_report(args):
     try:

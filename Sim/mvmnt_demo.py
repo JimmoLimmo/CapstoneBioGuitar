@@ -25,7 +25,7 @@ from strum_motion import (
     wrist_at,
 )
 
-#placement 
+#placement
 HAND_MODEL_PATH = "Sim/MPL/right_hand.xml"
 CALIBRATE = True
 HAND_ANCHOR_POS = [0.411, 0.000, 0.537]

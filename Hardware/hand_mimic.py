@@ -34,7 +34,7 @@ SIDES = ("left", "right")
 SWITCH_HOLD_S = 0.5    # the camera has to see the other hand for this long before the robot hands swap
 
 
-# --- right hand: camera -> curls -----------------------------------------------
+# right hand: camera to curls
 # joints = MediaPipe landmarks (a, b, c); the bend is how far b is from straight,
 # added up over the joints listed. straight_deg / curled_deg = that sum with the
 # finger straight / fully curled. All guesses: read the real ones off --dry-run --show.
@@ -56,8 +56,8 @@ RIGHT_TRACKING = {f"{finger}_{segment}": t for finger, segments in _BY_FINGER.it
 assert set(RIGHT_TRACKING) == set(fm.SERVO_NAMES)
 
 
+# Degrees the joint at b is bent away from straight; None if two landmarks coincide.
 def bend(points, a, b, c):
-    """Degrees the joint at b is bent away from straight; None if two landmarks coincide."""
     u = (points[b].x - points[a].x, points[b].y - points[a].y, points[b].z - points[a].z)
     v = (points[c].x - points[b].x, points[c].y - points[b].y, points[c].z - points[b].z)
     norm = math.sqrt(sum(x * x for x in u) * sum(x * x for x in v))
@@ -66,8 +66,8 @@ def bend(points, a, b, c):
     return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(u, v)) / norm))))
 
 
+# {servo: summed bend in degrees} from one hand's 21 landmarks.
 def right_bends(points):
-    """{servo: summed bend in degrees} from one hand's 21 landmarks."""
     out = {}
     for name, t in RIGHT_TRACKING.items():
         bends = [bend(points, *joint) for joint in t["joints"]]
@@ -81,10 +81,10 @@ def right_curl(name, degrees):
     return max(0.0, min(1.0, (degrees - t["straight_deg"]) / (t["curled_deg"] - t["straight_deg"])))
 
 
-# --- which hand ------------------------------------------------------------------
+# which hand
 
+# Turns the camera's Left/Right label into the robot hand to drive.
 class HandPicker:
-    """Turns the camera's Left/Right label into the robot hand to drive."""
 
     def __init__(self, forced=None, swap=False):
         self.forced = forced
@@ -94,8 +94,8 @@ class HandPicker:
         self.candidate = None
         self.since = 0.0
 
+    # label = "Left"/"Right" from MediaPipe, or None with no hand in view. Returns the active side.
     def update(self, label, now):
-        """label = "Left"/"Right" from MediaPipe, or None with no hand in view. Returns the active side."""
         side = label.lower() if label else None
         if side not in SIDES:
             side = None
@@ -113,7 +113,7 @@ class HandPicker:
         return self.active
 
 
-# --- servos ----------------------------------------------------------------------
+# servos
 
 def movable(side):
     if side == "left":
@@ -121,8 +121,8 @@ def movable(side):
     return [n for n in fm.SERVO_NAMES if fh.is_calibrated(n)]
 
 
+# Channels that two servos claim, across the left hand, the right fingers and the wrist.
 def clashes():
-    """Channels that two servos claim, across the left hand, the right fingers and the wrist."""
     users = {}
     for table in (lh.LEFT_SERVOS, fh.FINGER_SERVOS, so.WRIST_SERVOS):
         for name, c in table.items():
@@ -132,8 +132,8 @@ def clashes():
             for (address, channel), names in sorted(users.items()) if len(names) > 1]
 
 
+# Send both poses and tell the sim about the right one. Returns the left hand's pulses.
 def write_hands(bus, hands, left_pose, right_pose):
-    """Send both poses and tell the sim about the right one. Returns the left hand's pulses."""
     sent = lh.write(bus, left_pose) if "left" in hands else {}
     if "right" in hands:
         fh.write_fingers(bus, right_pose)
@@ -164,7 +164,7 @@ def right_lines(bends, pose):
     return lines
 
 
-# --- main --------------------------------------------------------------------------
+# main
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
