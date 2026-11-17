@@ -293,7 +293,7 @@ def main():
         print("[servo] not calibrated yet -- refusing to move anything:")
         for p in problems:
             print(f"          {p}")
-        print("[servo]   see Hardware/README.md, or pass --dry-run to check timing only.")
+        print("[servo]   see README.md section 8, or pass --dry-run to check timing only.")
         return
     calibrated = is_calibrated()
     if not calibrated:

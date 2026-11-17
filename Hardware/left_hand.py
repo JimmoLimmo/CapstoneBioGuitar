@@ -8,7 +8,7 @@ This is last year's Imitation/mimic.py moved onto the right-hand box. The servos
 sit on the 5 V board ("lv", 0x41), next to the wrist servos (ch 10-13), and go through power_box.py like every other
 script: Enter to arm, the E-stop stops it, signals off on every exit.
 
-Calibrate a servo with:  sudo python3 Hardware/calibrate_servo.py left_thumb
+Calibrate a servo with:  sudo python3 Hardware/calibrate_servo.py left_index
 """
 
 import argparse
@@ -30,11 +30,9 @@ from strum_motion import smooth  # noqa: E402
 
 MODEL_PATH = os.path.join(REPO_ROOT, "MediaPipe", "hand_landmarker.task")
 
-# One servo per finger: open_pulse = finger straight, closed_pulse = curled.
+# One servo per finger (no thumb): open_pulse = finger straight, closed_pulse = curled.
 # The four fingers keep last year's pulses (never above 7000).
-# The thumb is new: it stays still until it has both pulses.
 LEFT_SERVOS = {
-    "left_thumb":  {"board": "lv", "channel": 0,  "open_pulse": None, "closed_pulse": None},
     "left_index":  {"board": "lv", "channel": 1,  "open_pulse": 1638, "closed_pulse": 7000},
     "left_middle": {"board": "lv", "channel": 2,  "open_pulse": 1638, "closed_pulse": 7000},
     "left_ring":   {"board": "lv", "channel": 3,  "open_pulse": 1638, "closed_pulse": 7000},
@@ -44,9 +42,7 @@ calibration.apply("left", LEFT_SERVOS)
 
 # joints = MediaPipe landmarks (a, b, c); the bend is the angle at b.
 # straight_deg / curled_deg = that angle with the finger straight / fully curled.
-# The thumb's range is a guess: read the real angles off --dry-run --show.
 TRACKING = {
-    "left_thumb":  {"joints": (1, 2, 4),    "straight_deg": 160.0, "curled_deg": 110.0},
     "left_index":  {"joints": (5, 6, 8),    "straight_deg": 170.0, "curled_deg": 0.0},
     "left_middle": {"joints": (9, 10, 12),  "straight_deg": 170.0, "curled_deg": 0.0},
     "left_ring":   {"joints": (13, 14, 16), "straight_deg": 170.0, "curled_deg": 0.0},

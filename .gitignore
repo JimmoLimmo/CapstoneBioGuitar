@@ -2,3 +2,5 @@
 Testing/results/dry_run/
 *.bak-*
 Hardware/calibration.json
+__pycache__/
+venv/

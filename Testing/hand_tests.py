@@ -1,4 +1,4 @@
-"""Test runner for the CDR test plan: finger, strum, tempo, report. Usage is in Hardware/README.md."""
+"""Test runner for the CDR test plan: finger, strum, tempo, report. Usage is in README.md section 8."""
 
 import argparse
 import csv
