@@ -1,8 +1,45 @@
 # Bio-Inspired Guitarist
 
-This README covers what the code does, its architecture, how to run it, and what is still unfinished. Step-by-step bench procedures (calibrating servos, wiring checks, finger tuning) are in section 8.
+New team? Start with "Start here: get the code" just below. This README covers what the code does, its architecture, how to run it, and what is still unfinished. Step-by-step bench procedures (calibrating servos, wiring checks, finger tuning) are in section 8.
 
 Last updated: November 2026 (Fall 2026 team).
+
+## Start here: get the code
+
+The code starts from the Fall 2026 repo: **https://github.com/JimmoLimmo/CapstoneBioGuitar**
+
+Don't work in that repo. Make your team's own copy first, then use your copy's link everywhere these docs show `https://github.com/<owner>/<repo>.git`. A free GitHub organization the whole team owns is better than one person's account: the repo stays when that person leaves.
+
+1. **Make your copy.** Open the link above and click **Fork**, picking your team's organization or account. The fork keeps the full history. For a private repo, use GitHub's **Import repository** (on the **+** menu) with the same link instead, since a fork of a public repo can't be made private.
+2. **Clone your copy** onto the laptop:
+   ```
+   git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
+   ```
+3. **Add teammates** under Settings, Collaborators (or give them access through the organization).
+
+Then carry on with "On a laptop" in section 7.
+
+### If the link doesn't work
+
+If the Fall 2026 repo has been made private or deleted, the same code, with its git history, is on the Jetson in `~/Fall2026/CapstoneBioGuitar`. The Jetson has no internet, so bring it to the laptop first (this needs the direct Ethernet link from "Setting up a new Jetson" in section 7). On GitHub, make a new repository and leave it empty (no README, `.gitignore` or license) so the first push doesn't clash. Then:
+
+On the Jetson:
+```
+cd ~/Fall2026/CapstoneBioGuitar
+git bundle create ~/fall2026.bundle --all
+```
+On the laptop:
+```
+scp guitar@192.168.10.2:~/fall2026.bundle .
+git clone fall2026.bundle CapstoneBioGuitar-main
+cd CapstoneBioGuitar-main
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git push -u origin --all
+```
+
+### Calibration values
+
+Git doesn't carry `Hardware/calibration.json`, so the measured values only reach your repo through `Hardware/calibration.example.json`. If the Jetson's file is newer than that copy, copy it into `calibration.example.json` and commit it, or the values are lost.
 
 ## 1. What the project is
 
@@ -191,35 +228,9 @@ Pulses are PCA9685 `duty_cycle` counts at 50 Hz. 1638 to 8191 is 0.5 ms to 2.5 m
 
 ## 7. Getting started
 
-### Your own copy of the repo
-
-The Fall 2026 repo (`JimmoLimmo/CapstoneBioGuitar`) is on a personal GitHub account and isn't shared with later teams, so each team keeps the code in a repo of its own. A free GitHub organization the whole team owns is better than one person's account: the repo stays when that person leaves.
-
-- **Fork it** if you can open the repo on GitHub. The fork is yours and keeps the full history.
-- **Or make a new repo from a copy you have**: a laptop clone, the Jetson's `~/CapstoneBioGuitar`, a `repo.bundle`, or a ZIP from the shared drive. On GitHub, make a new repository and leave it empty (no README, `.gitignore` or license) so the first push doesn't clash.
-
-  From a clone (it has a `.git` folder), which keeps the history:
-  ```
-  cd CapstoneBioGuitar-main
-  git remote set-url origin https://github.com/<owner>/<repo>.git
-  git push -u origin --all
-  ```
-  From a bundle, `git clone repo.bundle CapstoneBioGuitar-main` first, then the same. From a ZIP (no history):
-  ```
-  cd CapstoneBioGuitar-main
-  git init -b main
-  git add -A
-  git commit -m "Code from the Fall 2026 team"
-  git remote add origin https://github.com/<owner>/<repo>.git
-  git push -u origin main
-  ```
-- Check `.gitignore` is there before `git add`, so `venv/`, bundles and `calibration.json` stay out.
-- Git doesn't carry `Hardware/calibration.json`. Copy the Jetson's file into `calibration.example.json` and commit it, or the measured values are lost.
-- For a private repo, add teammates under Settings, Collaborators. The Jetson doesn't care which GitHub repo the code came from: `git push jetson main` works the same.
-
 ### On a laptop (sim and dry runs, no hardware)
 
-1. Clone your team's copy of the repo (see above if you don't have one yet):
+1. Clone your team's copy of the repo ("Start here" at the top if you don't have one yet):
    ```
    git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
    ```
@@ -306,6 +317,55 @@ Skip this if the Jetson already has `~/CapstoneBioGuitar`. The Jetson has no int
    ```
    cp Hardware/calibration.example.json Hardware/calibration.json
    ```
+
+### Jetson desktop on the laptop (remote desktop)
+
+Remote desktop shows the Jetson's whole desktop in a window on the laptop, over the direct cable. Everything still runs on the Jetson: `run.py` opens the camera preview and the sim there, and you see both on the laptop. Unlike SSH window forwarding, the 3-D sim works this way, because it's drawn on the Jetson and only the picture of the screen is sent.
+
+**Once, on the Jetson (monitor and keyboard):**
+1. Open Settings, then Sharing. Turn on the switch at the top right of the window.
+2. Open Remote Desktop and turn on **Remote Desktop** and **Remote Control**. Leave Enable Legacy VNC Protocol off.
+3. Under Authentication, set User Name `guitar` and Password `password`. These are the remote desktop login, separate from the Jetson's own password.
+4. Remote desktop shares the desktop that's already logged in, so turn on automatic login (Settings, Users, Unlock, Automatic Login) and stop the screen locking (Settings, Privacy, Screen: Blank Screen Delay Never, Automatic Screen Lock off). Otherwise the connection shows a lock screen or nothing after a reboot. From a terminal instead: put `AutomaticLoginEnable=true` and `AutomaticLogin=guitar` under `[daemon]` in `/etc/gdm3/custom.conf`, and run:
+   ```
+   gsettings set org.gnome.desktop.session idle-delay 0
+   gsettings set org.gnome.desktop.screensaver lock-enabled false
+   ```
+5. **Make the login keyring's password blank.** Remote desktop keeps its login in the keyring, and after an automatic login the keyring stays locked, so Windows gets "The token supplied to the function is invalid". Passwords and Keys crashes on this Jetson, so start a new keyring instead. In a terminal on the Jetson's desktop (not over SSH):
+   ```
+   mv ~/.local/share/keyrings/login.keyring ~/.local/share/keyrings/login.keyring.old
+   sudo reboot
+   ```
+   After the reboot, set the login again; when asked for a password for the new keyring, leave it **blank** and accept the warning:
+   ```
+   grdctl rdp set-credentials guitar password
+   ```
+6. Reboot once more and check that the login survived: `grdctl status --show-credentials` should still show `guitar` / `password`.
+7. Keep SSH on as the way back in when remote desktop isn't working: Remote Login on in Sharing, or `sudo systemctl enable --now ssh`.
+
+**Each time, on the laptop:**
+1. Plug in the direct cable and check `ping 192.168.10.2`.
+2. Open **Remote Desktop Connection** from the Start menu. Computer: `192.168.10.2`. Click Connect.
+3. Windows fills in your own Microsoft account, which the Jetson won't accept. Click **More choices**, then **Use a different account**.
+4. User name `guitar`, password `password`. Tick Remember me so next time skips this step. Click OK.
+5. If Windows warns that the remote computer's identity can't be verified, click Yes. That's expected on the direct cable.
+6. In a terminal on the remote desktop:
+   ```
+   cd ~/CapstoneBioGuitar
+   python3 run.py mimic --show --hand both --wrist
+   ```
+
+- The sim needs PyBullet on the Jetson, which `requirements-jetson.txt` leaves out. Check with `python3 -c "import pybullet"`. If it's missing, `run.py` says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
+  ```
+  pip download pybullet --no-binary :all: --no-deps -d pybullet_src
+  scp -r pybullet_src guitar@192.168.10.2:~/
+  pip3 install --user ~/pybullet_src/pybullet-*.tar.gz      # on the Jetson
+  ```
+- The sim, the camera tracking and the servo loop all share the Jetson. The sim is its own process and the servos never wait for it, but if the preview's camera fps drops a lot, add `--no-sim`.
+- With no monitor on the Jetson, remote desktop may show a black or tiny screen. An HDMI dummy plug fixes it.
+- "The token supplied to the function is invalid": remote desktop couldn't read its login from the locked keyring. Check `grdctl status --show-credentials` on the Jetson's desktop and redo step 5 if the password isn't `password`.
+- "Credentials did not work": Windows sent your own account, or a wrong one it remembered. Use More choices, or remove `TERMSRV/192.168.10.2` in Windows Credential Manager (Windows Credentials) and connect again.
+- Keep someone at the E-stop for powered runs, the same as at the Jetson itself.
 
 ### On the Jetson (real hand)
 
@@ -414,7 +474,7 @@ python3 run.py mimic --hand right                 # always the right hand
 
 ### Live sim alongside the hand
 
-`run.py` does this for you when it runs on the Jetson's own desktop. To show the sim on the laptop instead, start it there first:
+`run.py` does this for you when it runs on the Jetson's own desktop, on a monitor or on the laptop through remote desktop (section 7). To run the sim on the laptop itself instead, start it there first:
 
 ```
 python Sim/mvmnt_demo.py --follow

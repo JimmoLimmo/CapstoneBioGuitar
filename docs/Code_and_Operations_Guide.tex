@@ -1,6 +1,4 @@
 % Code and Operations Guide Prostheticasters, Fall 2026
-% Compile with pdflatex. Each code block is wrapped in novalidate markers so
-% Overleaf's Code Check doesn't read shell commands as broken math.
 
 \documentclass[11pt,letterpaper]{article}
 
@@ -107,13 +105,55 @@ Prostheticasters, Fall 2026. \code{CapstoneBioGuitar folder in Guitar/Home}.
 Written by Jimmy Nguyen
 
 \vspace{18pt}
-\textbf{How this document is laid out.} Sections 1 to 6 are for working on the hand: how the system fits together, how to run the electrical box safely, how to set up the Jetson and move code to it, how to calibrate the servos, and how to run the hand and the CDR tests. Sections 7 to 13 are the code reference: every active module, what it is for, its main classes and functions, its command-line options, the constants you are most likely to change, and the file and network formats that connect the pieces. Section 14 collects the troubleshooting tables.
+\textbf{How this document is laid out.} New teams start with ``Start here'', right after the contents: it gets you your own copy of the code. Sections 1 to 6 are for working on the hand: how the system fits together, how to run the electrical box safely, how to set up the Jetson and move code to it, how to calibrate the servos, and how to run the hand and the CDR tests. Sections 7 to 13 are the code reference: every active module, what it is for, its main classes and functions, its command-line options, the constants you are most likely to change, and the file and network formats that connect the pieces. Section 14 collects the troubleshooting tables.
 
 \textbf{How this fits with the README.} The repo's \code{README.md} is the short starting guide. Where the two differ, this document follows the code as of November 18, 2026.
 \newpage
 
 \tableofcontents
 \newpage
+
+\section*{Start here: get the code}
+\addcontentsline{toc}{section}{Start here: get the code}
+The code starts from the Fall 2026 repo: \code{https:/\allowbreak{}/\allowbreak{}github.com/\allowbreak{}JimmoLimmo/\allowbreak{}CapstoneBioGuitar}.
+
+Don't work in that repo. Make your team's own copy first, then use your copy's link everywhere this guide shows \code{https:/\allowbreak{}/\allowbreak{}github.com/\allowbreak{}<owner>/\allowbreak{}<repo>.git}. A GitHub organization (free) that the whole team owns is better than one person's account: the repo stays when that person leaves.
+
+\begin{enumerate}
+  \item \textbf{Make your copy.} Open the link above and click \textbf{Fork}, picking your team's organization or account. The fork keeps the full history. For a private repo, use GitHub's \textbf{Import repository} (on the \textbf{+} menu) with the same link instead, since a fork of a public repo can't be made private.
+  \item \textbf{Clone your copy} onto the laptop:
+%%begin novalidate
+\begin{codeblock}
+git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
+\end{codeblock}
+%%end novalidate
+  \item \textbf{Add teammates} under Settings, Collaborators (or give them access through the organization).
+\end{enumerate}
+Then carry on with section 3.1.
+
+\subsubsection*{If the link doesn't work}
+If the Fall 2026 repo has been made private or deleted, the same code, with its git history, is on the Jetson in \code{\textasciitilde{}/\allowbreak{}Fall2026/\allowbreak{}CapstoneBioGuitar}. The Jetson has no internet, so bring it to the laptop first (this needs the direct Ethernet link from section 3.1). On GitHub, make a new repository and leave it empty (no README, \code{.gitignore} or license), so the first push doesn't clash. Then, on the Jetson:
+
+%%begin novalidate
+\begin{codeblock}
+cd ~/Fall2026/CapstoneBioGuitar
+git bundle create ~/fall2026.bundle --all
+\end{codeblock}
+%%end novalidate
+On the laptop:
+
+%%begin novalidate
+\begin{codeblock}
+scp guitar@192.168.10.2:~/fall2026.bundle .
+git clone fall2026.bundle CapstoneBioGuitar-main
+cd CapstoneBioGuitar-main
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git push -u origin --all
+\end{codeblock}
+%%end novalidate
+
+\subsubsection*{Calibration values}
+Git doesn't carry \code{Hardware/\allowbreak{}calibration.json}, so the measured values only reach your repo through \code{Hardware/\allowbreak{}calibration.example.json}. If the Jetson's file is newer than that copy, copy it into \code{calibration.example.json} and commit it (section 3.2), or the values are lost.
 
 \section{System overview}
 The software drives two robot hands from a Jetson Orin Nano in the right-hand electrical box. The right hand strums: a ball-joint wrist pulled by four MG995 servos and five fingers with two HPS-0618SG servos each. The left hand, from Spring 2026, has four finger servos (no thumb) and only mimics a hand seen by a camera. A PyBullet simulation can run alongside and show the same commands live.
@@ -172,7 +212,7 @@ Scripts add \code{Sim/\allowbreak{}} and \code{Hardware/\allowbreak{}} to \code{
 \hline
 \rowcolor{tblhead}\textbf{What} & \textbf{Where} \\ \hline
 \endhead
-Repository & Fall 2026: \code{https:/\allowbreak{}/\allowbreak{}github.com/\allowbreak{}JimmoLimmo/\allowbreak{}CapstoneBioGuitar}, which isn't shared. Later teams keep their own copy (section 3.6). \\ \hline
+Repository & Fall 2026: \code{https:/\allowbreak{}/\allowbreak{}github.com/\allowbreak{}JimmoLimmo/\allowbreak{}CapstoneBioGuitar}. Later teams fork it or copy it into a repo of their own (Start here). An archived copy is on the Jetson in \code{\textasciitilde{}/\allowbreak{}Fall2026/\allowbreak{}CapstoneBioGuitar}. \\ \hline
 Code on the laptop (edit here) & Wherever you cloned it; on Jimmy's laptop \code{C:\textbackslash\allowbreak{}Users\textbackslash\allowbreak{}JMAMA\textbackslash\allowbreak{}Documents\textbackslash\allowbreak{}Capstone\textbackslash\allowbreak{}CapstoneBioGuitar-{}\allowbreak{}main} \\ \hline
 Code on the Jetson (run here) & \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar} \\ \hline
 Measured servo values & \code{Hardware/\allowbreak{}calibration.json} on the Jetson; a committed copy in \code{Hardware/\allowbreak{}calibration.example.json} (section 11.1) \\ \hline
@@ -303,7 +343,7 @@ servo Hardware/test_one_servo.py <channel> <hv|lv>
 Do these once, in order, on a new laptop or a new Jetson. Skip anything that's already done. The Jetson has no internet, so everything reaches it over a direct Ethernet cable from the laptop. The Jetson user is \code{guitar}.
 
 \begin{enumerate}
-  \item \textbf{Get the code on the laptop.} Clone your team's copy of the repo (section 3.6 if you don't have one yet), then set up the conda environment (section 3.5):
+  \item \textbf{Get the code on the laptop.} Clone your team's copy of the repo (Start here, at the front of this guide, if you don't have one yet), then set up the conda environment (section 3.5):
 %%begin novalidate
 \begin{codeblock}
 git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
@@ -560,48 +600,65 @@ python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.
   \item If the sim window shows nothing moving, the sim wasn't started first, or a firewall is blocking UDP port 5005.
 \end{itemize}
 
-\subsection{Your own copy of the repo}
-The Fall 2026 repo is on a personal GitHub account and isn't shared with later teams, so each team keeps the code in a repo of its own. A GitHub organization (free) that the whole team can own is better than one person's account: the repo stays when that person leaves.
+\subsection{Jetson desktop on the laptop (remote desktop)}
+Remote desktop shows the Jetson's whole desktop in a window on the laptop, over the direct cable. Everything still runs on the Jetson: \code{run.py} opens the camera preview and the sim on the Jetson's desktop, and you see both on the laptop. Unlike SSH window forwarding, the 3-D sim works this way, because it is drawn on the Jetson and only the picture of the screen is sent.
 
-\subsubsection*{Fork it}
-If you can open the repo on GitHub, click \textbf{Fork}. The fork is yours and keeps the full history. Clone the fork (section 3.1).
-
-\subsubsection*{Make a new repo from a copy you have}
-Any copy works: a laptop clone, the Jetson's \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar}, a \code{repo.\allowbreak{}bundle}, or a ZIP from the shared drive. On GitHub, make a new repository and leave it empty (no README, \code{.gitignore} or license), so the first push doesn't clash.
-
-From a clone (it has a \code{.git} folder), which keeps the history:
-
+\subsubsection*{Once, on the Jetson (monitor and keyboard)}
+\begin{enumerate}
+  \item Open Settings, then Sharing. Turn on the switch at the top right of the window.
+  \item Open Remote Desktop and turn on \textbf{Remote Desktop} and \textbf{Remote Control}. Leave Enable Legacy VNC Protocol off.
+  \item Under Authentication, set User Name \code{guitar} and Password \code{password}. These are the remote desktop login, separate from the Jetson's own password.
+  \item Remote desktop shares the desktop that's already logged in, so turn on automatic login (Settings, Users, Unlock, Automatic Login) and stop the screen locking (Settings, Privacy, Screen: Blank Screen Delay Never, Automatic Screen Lock off). Otherwise the connection shows a lock screen or nothing after a reboot. From a terminal instead: put \code{AutomaticLoginEnable=\allowbreak{}true} and \code{AutomaticLogin=\allowbreak{}guitar} under \code{[daemon]} in \code{/\allowbreak{}etc/\allowbreak{}gdm3/\allowbreak{}custom.conf}, and run:
 %%begin novalidate
 \begin{codeblock}
-cd CapstoneBioGuitar-main
-git remote set-url origin https://github.com/<owner>/<repo>.git
-git push -u origin --all
+gsettings set org.gnome.desktop.session idle-delay 0
+gsettings set org.gnome.desktop.screensaver lock-enabled false
 \end{codeblock}
 %%end novalidate
-From a bundle, clone it first, then do the same:
-
+  \item \textbf{Make the login keyring's password blank.} Remote desktop keeps its login in the keyring, and after an automatic login the keyring stays locked, so Windows gets ``The token supplied to the function is invalid''. Passwords and Keys crashes on this Jetson, so start a new keyring instead. In a terminal on the Jetson's desktop (not over SSH):
 %%begin novalidate
 \begin{codeblock}
-git clone repo.bundle CapstoneBioGuitar-main
+mv ~/.local/share/keyrings/login.keyring ~/.local/share/keyrings/login.keyring.old
+sudo reboot
 \end{codeblock}
 %%end novalidate
-From a ZIP (no history):
-
+After the reboot, set the login again; when asked for a password for the new keyring, leave it \textbf{blank} and accept the warning:
 %%begin novalidate
 \begin{codeblock}
-cd CapstoneBioGuitar-main
-git init -b main
-git add -A
-git commit -m "Code from the Fall 2026 team"
-git remote add origin https://github.com/<owner>/<repo>.git
-git push -u origin main
+grdctl rdp set-credentials guitar password
 \end{codeblock}
 %%end novalidate
+  \item Reboot once more and check that the login survived: \code{grdctl status -{}-{}show-{}\allowbreak{}credentials} should still show \code{guitar} / \code{password}.
+  \item Keep SSH on as the way back in when remote desktop isn't working: Remote Login on in Sharing, or \code{sudo systemctl enable -{}-{}now ssh}.
+\end{enumerate}
+
+\subsubsection*{Each time, on the laptop}
+\begin{enumerate}
+  \item The direct cable is plugged in and \code{ping 192.168.10.2} works (section 3.1).
+  \item Open \textbf{Remote Desktop Connection} from the Start menu. Computer: \code{192.168.10.2}. Click Connect.
+  \item Windows fills in your own Microsoft account, which the Jetson won't accept. Click \textbf{More choices}, then \textbf{Use a different account}.
+  \item User name \code{guitar}, password \code{password}. Tick Remember me so next time skips this step. Click OK.
+  \item If Windows warns that the remote computer's identity can't be verified, click Yes. That's expected on the direct cable.
+  \item In a terminal on the remote desktop:
+%%begin novalidate
+\begin{codeblock}
+cd ~/CapstoneBioGuitar
+python3 run.py mimic --show --hand both --wrist
+\end{codeblock}
+%%end novalidate
+\end{enumerate}
 \begin{itemize}
-  \item Check \code{.gitignore} is there before \code{git add}, so \code{venv/\allowbreak{}}, bundles and \code{calibration.json} stay out.
-  \item Git doesn't carry \code{Hardware/\allowbreak{}calibration.json}. Copy the Jetson's file into \code{calibration.example.json} and commit it (section 3.2), or the measured values are lost.
-  \item For a private repo, add teammates under Settings, Collaborators.
-  \item The Jetson doesn't care which GitHub repo the code came from: \code{git push jetson main} works the same (section 3.2).
+  \item The sim needs PyBullet on the Jetson, which \code{requirements-{}\allowbreak{}jetson.\allowbreak{}txt} leaves out. Check with \code{python3 -{}c \textquotedbl{}import pybullet\textquotedbl{}}. If it's missing, \code{run.py} says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
+%%begin novalidate
+\begin{codeblock}
+pip download pybullet --no-binary :all: --no-deps -d pybullet_src
+scp -r pybullet_src guitar@192.168.10.2:~/
+pip3 install --user ~/pybullet_src/pybullet-*.tar.gz      # on the Jetson
+\end{codeblock}
+%%end novalidate
+  \item The sim, the camera tracking and the servo loop all share the Jetson. The sim is its own process and the servos never wait for it, but if the preview's camera fps drops a lot, add \code{-{}-{}no-{}\allowbreak{}sim}.
+  \item With no monitor on the Jetson, remote desktop may show a black or tiny screen. An HDMI dummy plug fixes it.
+  \item Keep someone at the E-stop for powered runs, the same as at the Jetson itself.
 \end{itemize}
 
 
@@ -978,7 +1035,7 @@ python3 run.py mimic --hand right                 # always the right hand
 
 
 \subsection{Live sim alongside the hand}
-\code{run.py} does this for you on the Jetson's own desktop. To show the sim on the laptop instead, start it there first:
+\code{run.py} does this for you on the Jetson's own desktop, on a monitor or on the laptop through remote desktop (section 3.6). To run the sim on the laptop itself instead, start it there first:
 
 %%begin novalidate
 \begin{codeblock}
@@ -1615,6 +1672,10 @@ Ping works but \code{ssh} doesn't & On the Jetson: \code{sudo systemctl enable -
 \code{git pull} fails: local changes & \code{git stash}, then pull again. \\ \hline
 \code{git pull} fails: not a bundle / bad path & Check the USB stick's mount path with \code{ls /\allowbreak{}media/\allowbreak{}\$USER}. \\ \hline
 Changes on the laptop don't appear on the Jetson & You didn't commit before pushing or bundling, or pulled an old bundle. \code{git log -{}-{}oneline -{}1} on both should match. \\ \hline
+Remote desktop: ``credentials did not work'' & Windows sent your own account. Click More choices, Use a different account, then \code{guitar} / \code{password} (section 3.6). If it remembered a wrong login, remove \code{TERMSRV/\allowbreak{}192.168.10.2} in Windows Credential Manager (Windows Credentials) and connect again. \\ \hline
+Remote desktop: ``The token supplied to the function is invalid'' & Remote desktop couldn't read its own login from the locked keyring. On the Jetson's desktop, \code{grdctl status -{}-{}show-{}\allowbreak{}credentials}: if the password isn't \code{password}, make the keyring password blank and set the login again (section 3.6). \\ \hline
+\code{ssh} stopped working after a reboot & SSH isn't set to start at boot. At the Jetson: \code{sudo systemctl enable -{}-{}now ssh}, or turn on Remote Login in Settings, Sharing. \\ \hline
+Remote desktop: black screen, lock screen or can't connect & The Jetson must be logged in to its desktop and not locked: turn on automatic login and turn off the screen lock (section 3.6). With no monitor, use an HDMI dummy plug. Check Sharing and Remote Desktop are still on. \\ \hline
 Sim shows nothing while the hand runs & Allow UDP port 5005 through the laptop's firewall; check the \code{-{}-{}sim-{}\allowbreak{}ip} address. \\ \hline
 \end{longtable}}
 
