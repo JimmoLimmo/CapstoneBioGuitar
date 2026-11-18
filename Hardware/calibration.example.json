@@ -1,0 +1,142 @@
+{
+  "fingers": {
+    "index_base": {
+      "board": "hv",
+      "channel": 3,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "index_tip": {
+      "board": "hv",
+      "channel": 2,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "middle_base": {
+      "board": "hv",
+      "channel": 4,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "middle_tip": {
+      "board": "hv",
+      "channel": 5,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "pinky_base": {
+      "board": "hv",
+      "channel": 8,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "pinky_tip": {
+      "board": "hv",
+      "channel": 9,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "ring_base": {
+      "board": "hv",
+      "channel": 6,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "ring_tip": {
+      "board": "hv",
+      "channel": 7,
+      "closed_pulse": 1700,
+      "open_pulse": 8100
+    },
+    "thumb_base": {
+      "board": "hv",
+      "channel": 0,
+      "closed_pulse": 8100,
+      "open_pulse": 1700
+    },
+    "thumb_tip": {
+      "board": "hv",
+      "channel": 1,
+      "closed_pulse": 8100,
+      "open_pulse": 1650
+    }
+  },
+  "tracking": {
+    "right": {
+      "index_base": {
+        "curled_deg": 54.0,
+        "straight_deg": 24.9
+      },
+      "index_tip": {
+        "curled_deg": 159.0,
+        "straight_deg": 57.7
+      },
+      "middle_base": {
+        "curled_deg": 47.2,
+        "straight_deg": 16.3
+      },
+      "middle_tip": {
+        "curled_deg": 183.8,
+        "straight_deg": 42.1
+      },
+      "pinky_base": {
+        "curled_deg": 55.1,
+        "straight_deg": 18.5
+      },
+      "pinky_tip": {
+        "curled_deg": 176.0,
+        "straight_deg": 32.8
+      },
+      "ring_base": {
+        "curled_deg": 57.3,
+        "straight_deg": 18.3
+      },
+      "ring_tip": {
+        "curled_deg": 169.8,
+        "straight_deg": 28.2
+      },
+      "thumb_base": {
+        "curled_deg": 48.8,
+        "straight_deg": 3.7
+      },
+      "thumb_tip": {
+        "curled_deg": 79.4,
+        "straight_deg": 27.3
+      },
+      "wrist_neutral": {
+        "across": [
+          -0.88799,
+          0.14619,
+          -0.43601
+        ],
+        "up": [
+          0.19391,
+          -0.97816,
+          0.0748
+        ]
+      }
+    }
+  },
+  "wrist": {
+    "dev_neg": {
+      "board": "lv",
+      "channel": 11,
+      "neutral_pulse": 5600
+    },
+    "dev_pos": {
+      "board": "lv",
+      "channel": 10,
+      "neutral_pulse": 5200
+    },
+    "flex_neg": {
+      "board": "lv",
+      "channel": 13,
+      "neutral_pulse": 6000
+    },
+    "flex_pos": {
+      "board": "lv",
+      "channel": 12,
+      "neutral_pulse": 5200
+    }
+  }
+}

@@ -44,7 +44,7 @@ Run every command from the repo root (`CapstoneBioGuitar-main/`). The scripts us
 | `Sim/strum_motion.py` | The strum choreography: reads a song or pattern, builds a schedule of strokes, and gives the wrist angles at any time. No hardware or PyBullet imports, so both the sim and the hand use it. |
 | `Sim/finger_motion.py` | Finger poses (`open`, `fist`, `pick_ready`, `pick_grip`...). Shared by the sim and the hand. |
 | `Sim/motion_link.py` | Sends commands from the hand scripts to the sim over UDP (port 5005). |
-| `Sim/mvmnt_demo.py` | The PyBullet sim, with both hands. Plays a song by itself, or with `--follow` shows the commands the real hands are getting, or with `--mimic` follows hands on the camera. |
+| `Sim/mvmnt_demo.py` | The PyBullet sim, with both hands. Plays a song by itself, or with `--follow` shows the commands the real hands are getting, or with `--mimic` follows hands on the camera (fingers only). |
 | `Sim/hand_tracking.py` | Camera tracking for the mimic scripts and the sim: MediaPipe landmarks to finger curls, with smoothing. Holds `LEFT_TRACKING` / `RIGHT_TRACKING`. |
 | `Sim/hand.py` | Manual joint sliders for the sim hand. |
 | `Hardware/hand_control.py` | The `Hand` class: one object that drives the wrist and fingers safely. Most scripts are built on it. |
@@ -62,6 +62,9 @@ Run every command from the repo root (`CapstoneBioGuitar-main/`). The scripts us
 | `Hardware/test_one_servo.py`, `test_one_servo_armed.py` | Quick wiring checks for one channel. |
 | `Hardware/relay_polarity_test.py` | Only for an alternative relay wiring. Not used with the REV 3 box. |
 | `Testing/hand_tests.py` | The CDR test plan: fingertip accuracy, strum repeatability, tempo. |
+| `requirements.txt`, `requirements-jetson.txt` | Python packages for the laptop and for the Jetson (section 7). |
+| `Hardware/calibration.example.json` | A copy of the measured calibration values, the starting point for a new Jetson (section 7). |
+| `docs/` | The full guide (box, Jetson setup, calibration, tests, code reference), the CDR and the SOP. |
 
 ### In progress (Caeden, learning from video)
 
@@ -188,22 +191,121 @@ Pulses are PCA9685 `duty_cycle` counts at 50 Hz. 1638 to 8191 is 0.5 ms to 2.5 m
 
 ## 7. Getting started
 
+### Your own copy of the repo
+
+The Fall 2026 repo (`JimmoLimmo/CapstoneBioGuitar`) is on a personal GitHub account and isn't shared with later teams, so each team keeps the code in a repo of its own. A free GitHub organization the whole team owns is better than one person's account: the repo stays when that person leaves.
+
+- **Fork it** if you can open the repo on GitHub. The fork is yours and keeps the full history.
+- **Or make a new repo from a copy you have**: a laptop clone, the Jetson's `~/CapstoneBioGuitar`, a `repo.bundle`, or a ZIP from the shared drive. On GitHub, make a new repository and leave it empty (no README, `.gitignore` or license) so the first push doesn't clash.
+
+  From a clone (it has a `.git` folder), which keeps the history:
+  ```
+  cd CapstoneBioGuitar-main
+  git remote set-url origin https://github.com/<owner>/<repo>.git
+  git push -u origin --all
+  ```
+  From a bundle, `git clone repo.bundle CapstoneBioGuitar-main` first, then the same. From a ZIP (no history):
+  ```
+  cd CapstoneBioGuitar-main
+  git init -b main
+  git add -A
+  git commit -m "Code from the Fall 2026 team"
+  git remote add origin https://github.com/<owner>/<repo>.git
+  git push -u origin main
+  ```
+- Check `.gitignore` is there before `git add`, so `venv/`, bundles and `calibration.json` stay out.
+- Git doesn't carry `Hardware/calibration.json`. Copy the Jetson's file into `calibration.example.json` and commit it, or the measured values are lost.
+- For a private repo, add teammates under Settings, Collaborators. The Jetson doesn't care which GitHub repo the code came from: `git push jetson main` works the same.
+
 ### On a laptop (sim and dry runs, no hardware)
 
-1. Use Python 3.10, 3.11 or 3.12. PyBullet often has no Windows install for the newest Python.
-2. Install what the sim needs: `pip install pybullet numpy PyGuitarPro`. The full `requirements.txt` also lists the servo libraries, which often fail to install on Windows. You don't need them for dry runs.
-3. From the repo root:
+1. Clone your team's copy of the repo (see above if you don't have one yet):
+   ```
+   git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
+   ```
+2. PyBullet often has no Windows install for the newest Python, so use Anaconda (or Miniconda). Set up an environment once, from the Anaconda Prompt:
+   ```
+   conda create -n bioguitar python=3.12
+   conda activate bioguitar
+   conda install -c conda-forge pybullet
+   cd CapstoneBioGuitar-main
+   pip install -r requirements.txt
+   ```
+   `requirements.txt` skips its Linux-only packages on Windows. If pip tries to build PyBullet and asks for Microsoft Visual C++, the environment isn't active: PyBullet should come from conda-forge.
+3. Each time, run `conda activate bioguitar`, then from the repo root:
 
 ```
 python run.py song --dry-run            # sim opens, the song plays on screen
 python run.py console --dry-run         # type commands, watch the sim
 python Hardware/servo_output.py --dry-run   # print the schedule and servo demand only, no sim
-python Sim/mvmnt_demo.py --mimic --show     # both sim hands follow your hands on the webcam (needs opencv-python, mediapipe)
+python Sim/mvmnt_demo.py --mimic --show     # both sim hands follow your hands on the webcam (fingers only)
 ```
 
 `run.py` opens the sim, waits for it, then starts the hand script with `--sim-ip 127.0.0.1`. Add `--no-sim` to skip the sim.
 
-`SIMULATION_SETUP.md` in the Capstone folder has more install troubleshooting.
+#### Camera and sim together (wrist included)
+
+`--mimic` moves the fingers only; the wrist stays straight. To see everything the real hand would be told to do, wrist included, run the real mimic script in a dry run and send it to the sim. Nothing needs the Jetson or the box.
+
+Record your hand once first (open, then a fist, when asked). On the laptop this writes the laptop's own `Hardware/calibration.json`; the Jetson's copy isn't touched:
+```
+python Hardware/hand_mimic.py --calibrate --hand both --show
+```
+Then open two Anaconda Prompts, activate `bioguitar` in both and `cd` to the repo root. Start the sim first:
+```
+python Sim/mvmnt_demo.py --follow
+```
+and the camera in the second window:
+```
+python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.0.0.1
+```
+- `127.0.0.1` means this computer. With the sim on another computer, use that computer's address instead.
+- `--dry-run` keeps the script away from the servo boards. It still warns about uncalibrated servos; that's expected on the laptop.
+- Leave out `--wrist` to move the fingers only, or use `--hand right` to follow one hand.
+- Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip `WRIST_DEV_SIGN` or `WRIST_FLEX_SIGN` in `Sim/hand_tracking.py`. The sim and the hand get the same numbers, so if only the real hand is reversed, the wrist servos are swapped instead (`calibrate_servo.py --swap dev` or `--swap flex`).
+- If the sim shows nothing moving, it wasn't started first, or a firewall is blocking UDP port 5005.
+
+### Setting up a new Jetson
+
+Skip this if the Jetson already has `~/CapstoneBioGuitar`. The Jetson has no internet, so everything goes over a direct Ethernet cable from the laptop. The Jetson user is `guitar`.
+
+1. **Fixed addresses.** On the Jetson (monitor and keyboard), turn on SSH and give the Ethernet port `192.168.10.2`. The Orin Nano's port is usually `enP8p1s0`; `ip -br link` shows the name.
+   ```
+   sudo systemctl enable --now ssh
+   sudo nmcli con add type ethernet ifname enP8p1s0 con-name direct ipv4.method manual ipv4.addresses 192.168.10.2/24
+   sudo nmcli con up direct
+   ```
+   On the laptop, open Settings, Network & Internet, Ethernet, IP assignment, Edit, and choose Manual. Turn IPv4 on: address `192.168.10.1`, subnet mask `255.255.255.0`, gateway and DNS blank. Then check with `ping 192.168.10.2` and `ssh guitar@192.168.10.2`. Don't use `192.168.55.x`: that's the Jetson's USB link.
+2. **First copy of the repo.** The Jetson can't clone from GitHub, so bundle the repo on the laptop and clone from the bundle. On the laptop, in the repo:
+   ```
+   git bundle create repo.bundle HEAD main
+   scp repo.bundle guitar@192.168.10.2:~/
+   ```
+   On the Jetson:
+   ```
+   git clone ~/repo.bundle ~/CapstoneBioGuitar
+   cd ~/CapstoneBioGuitar
+   git config receive.denyCurrentBranch updateInstead
+   ```
+   Back on the laptop, add the Jetson as a remote so `git push jetson main` works from then on:
+   ```
+   git remote add jetson ssh://guitar@192.168.10.2/home/guitar/CapstoneBioGuitar
+   ```
+3. **Python packages.** `requirements-jetson.txt` has the servo libraries, OpenCV and MediaPipe (no PyBullet). Install them for the `guitar` user, not with sudo. If the Jetson can get internet some other way (a phone's USB tethering, a hotspot), run `pip3 install --user -r requirements-jetson.txt`. Otherwise download the wheels on the laptop (match `--python-version` to `python3 --version` on the Jetson; JetPack 6 has 3.10):
+   ```
+   pip download -r requirements-jetson.txt -d jetson_wheels --platform manylinux2014_aarch64 --python-version 3.10 --only-binary=:all:
+   scp -r jetson_wheels guitar@192.168.10.2:~/
+   ```
+   and install them on the Jetson:
+   ```
+   pip3 install --user --no-index --find-links ~/jetson_wheels -r ~/CapstoneBioGuitar/requirements-jetson.txt
+   ```
+   If `pip download` finds no wheel for a package, download that one again without `--platform` and `--only-binary`; pure-Python packages install from the source file.
+4. **The `servo` shortcut, pins 15 and 31, and the boards.** Set up the shortcut (below). Run `sudo /opt/nvidia/jetson-io/jetson-io.py` and make sure pins 15 and 31 are plain GPIO, not PWM. `sudo i2cdetect -y -r 7` should show 40, 41 and 70.
+5. **Calibration file.** Start from the committed values, then finish calibration (section 8):
+   ```
+   cp Hardware/calibration.example.json Hardware/calibration.json
+   ```
 
 ### On the Jetson (real hand)
 
@@ -212,8 +314,9 @@ python Sim/mvmnt_demo.py --mimic --show     # both sim hands follow your hands o
 - Scripts run on their own (not through `run.py`) need sudo for GPIO and I2C, plus your user's packages, so run them with the `servo` shortcut: `servo Hardware/...`. Plain `sudo python3` gives a missing-module error. Set the shortcut up once with
   `echo "alias servo='sudo DISPLAY=\$DISPLAY XAUTHORITY=\${XAUTHORITY:-\$HOME/.Xauthority} PYTHONPATH=\$(python3 -m site --user-site) python3'" >> ~/.bashrc && source ~/.bashrc`.
   The `DISPLAY` / `XAUTHORITY` part lets `--show` windows open under sudo.
-- Servo packages: `Jetson.GPIO`, `adafruit-circuitpython-pca9685`, and either `adafruit-extended-bus` or Adafruit Blinka. Camera scripts also need `opencv-python` and `mediapipe`.
-- `Hardware/calibration.json` only exists on the Jetson. Back it up; it's the only copy of the measured values.
+- Packages: `requirements-jetson.txt` (step 3 above). `Jetson.GPIO` comes with JetPack, and `Hardware/i2c_bus.py` also works with Adafruit Blinka in place of `adafruit-extended-bus`.
+- `Hardware/calibration.json` only exists on the Jetson, and git ignores it. After calibrating, copy it back over the example and commit it, so the measured values are saved in the repo:
+  `scp guitar@192.168.10.2:~/CapstoneBioGuitar/Hardware/calibration.json Hardware/calibration.example.json` (on the laptop, in the repo).
 
 ### First run on the box
 
@@ -307,7 +410,7 @@ python3 run.py mimic --hand right                 # always the right hand
 - Right hand: each finger's `base` servo follows the knuckle and its `tip` servo follows the two outer joints added together (`RIGHT_TRACKING` in `Sim/hand_tracking.py`). To split them differently, change `_split()`. The `straight_deg` / `curled_deg` values in the code are guesses. Measure your own once with `python3 Hardware/hand_mimic.py --calibrate --hand both --show`: hold your hand open, then in a fist (nothing moves). It saves the ranges and your wrist's straight pose (needed for `--wrist`) to `calibration.json`.
 - Servos with no calibration stay still. The right-hand fingers have starting pulses, so they move, but over an unmeasured range until they are calibrated.
 - Tracking uses MediaPipe's 3-D landmarks in video mode, so a finger reads the same however the hand is turned, and `CurlFilter` takes out the jitter. If the hand lags real moves, raise `BETA`; if it still shakes when you hold still, lower `MIN_CUTOFF_HZ` (both in `Sim/hand_tracking.py`).
-- Sim only, no Jetson: `python Sim/mvmnt_demo.py --mimic --show`. It tracks both hands at once (your left drives the left sim hand, your right the right one). A hand out of view for a second goes back to rest.
+- Sim only, no Jetson: `python Sim/mvmnt_demo.py --mimic --show`. It tracks both hands at once (your left drives the left sim hand, your right the right one), fingers only. A hand out of view for a second goes back to rest. For the wrist too, see "Camera and sim together" in section 7.
 
 ### Live sim alongside the hand
 
@@ -360,7 +463,8 @@ The CDR's 0.12 s strike needs about 563 deg/s at the wrist. With the measured ge
 | Grip the pick | `python3 run.py pick` |
 | Run a CDR test | `python3 run.py test strum --cycles 20`; results go to `Testing/results/` |
 | Camera mimic | `python3 run.py mimic --show` (try `--dry-run --show` first) |
-| Camera mimic in the sim only | `python Sim/mvmnt_demo.py --mimic --show` |
+| Camera mimic in the sim only | `python Sim/mvmnt_demo.py --mimic --show` (fingers only) |
+| Camera mimic in the sim, wrist too | `python Sim/mvmnt_demo.py --follow`, then in a second window `python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.0.0.1` |
 | Re-place the hands or guitar in the sim | Set `CALIBRATE = True` in `Sim/mvmnt_demo.py`, drag the sliders (`left_*` move the left hand), then paste the printed values |
 
 ## 10. Safety rules built into the code
@@ -406,7 +510,6 @@ Things to know:
 
 ## 13. More information
 
-- `SIMULATION_SETUP.md` (Capstone folder): installing PyBullet and the separate MANO/Ursina sim.
-- `CDR.pdf` and `Fall 26 SOP.pdf` (Capstone folder): design review and safety procedure.
-- The Capstone project's `right-hand-electrical-box.md`: box layout and wiring notes.
+- `docs/Code_and_Operations_Guide.pdf`: the full guide: the electrical box, Jetson setup, calibration, running the hand, the CDR tests and a reference for every module. Its LaTeX source is next to it.
+- `docs/CDR.pdf` and `docs/Fall26_SOP.pdf`: design review and safety procedure.
 - `credits.md`: outside projects and models we used.

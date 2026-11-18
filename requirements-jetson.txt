@@ -1,0 +1,7 @@
+# Jetson only. PyBullet is left out: the sim runs on the laptop. Jetson.GPIO comes with JetPack.
+numpy
+PyGuitarPro
+adafruit-circuitpython-pca9685
+adafruit-extended-bus
+opencv-python
+mediapipe

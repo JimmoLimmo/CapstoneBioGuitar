@@ -1,0 +1,1641 @@
+% Code and Operations Guide Prostheticasters, Fall 2026
+% Compile with pdflatex. Each code block is wrapped in novalidate markers so
+% Overleaf's Code Check doesn't read shell commands as broken math.
+
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{textcomp}
+\usepackage[margin=1in]{geometry}
+\IfFileExists{carlito.sty}{\usepackage[sfdefault,lf]{carlito}}{\renewcommand{\familydefault}{\sfdefault}}
+\IfFileExists{inconsolata.sty}{\usepackage[varqu]{inconsolata}}{}
+\usepackage{upquote}
+\usepackage{setspace}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{relsize}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{ragged2e}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{hone}{HTML}{1F3864}
+\definecolor{htwo}{HTML}{2E5597}
+\definecolor{hthree}{HTML}{404040}
+\definecolor{codeblue}{HTML}{1F3864}
+\definecolor{codebg}{HTML}{F2F4F7}
+\definecolor{notebg}{HTML}{EEF2F8}
+\definecolor{tblhead}{HTML}{DCE3ED}
+\definecolor{tblrule}{HTML}{BFC5CE}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setstretch{1.1}
+
+% headings
+\setcounter{secnumdepth}{2}
+\titleformat{\section}{\color{hone}\bfseries\fontsize{16}{20}\selectfont}{\thesection.}{0.4em}{}
+\titlespacing*{\section}{0pt}{18pt}{6pt}
+\titleformat{\subsection}{\color{htwo}\bfseries\fontsize{13}{16}\selectfont}{\thesubsection}{0.4em}{}
+\titlespacing*{\subsection}{0pt}{14pt}{4pt}
+\titleformat{\subsubsection}{\color{hthree}\bfseries\normalsize}{}{0em}{}
+\titlespacing*{\subsubsection}{0pt}{10pt}{2pt}
+
+% contents
+\setcounter{tocdepth}{2}
+\renewcommand{\cfttoctitlefont}{\color{hone}\bfseries\fontsize{16}{20}\selectfont}
+\renewcommand{\cftsecfont}{\normalfont}
+\renewcommand{\cftsecpagefont}{\normalfont}
+\renewcommand{\cftsecaftersnum}{.}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforesecskip}{2pt}
+
+% footer
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\cfoot{\color{gray}\scriptsize Code and Operations Guide\quad|\quad Page \thepage}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \cfoot{\color{gray}\scriptsize Code and Operations Guide\quad|\quad Page \thepage}}
+
+% lists
+\setlist{topsep=2pt,itemsep=2pt,parsep=0pt}
+\setlist[itemize]{label=\textbullet}
+\setlist[enumerate]{label=\arabic*.}
+
+% inline code
+\newcommand{\code}[1]{\textcolor{codeblue}{\ttfamily\smaller\relax #1}}
+
+% code blocks
+\lstset{basicstyle=\ttfamily\footnotesize, columns=fullflexible, keepspaces=true,
+  breaklines=true, breakatwhitespace=false, upquote=true, showstringspaces=false}
+\newtcblisting{codeblock}{listing only, colback=codebg, boxrule=0pt, frame hidden, arc=0pt,
+  left=6pt, right=6pt, top=3pt, bottom=3pt, before skip=4pt, after skip=8pt}
+
+% notes
+\newtcolorbox{note}{enhanced, colback=notebg, frame hidden, boxrule=0pt, arc=0pt,
+  borderline west={2.5pt}{0pt}{htwo}, left=8pt, right=6pt, top=4pt, bottom=4pt,
+  before skip=4pt, after skip=10pt, fontupper=\setlength{\parskip}{0pt}}
+
+% tables
+\arrayrulecolor{tblrule}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{5pt}
+\setlength{\LTpre}{4pt}
+\setlength{\LTpost}{10pt}
+
+\begin{document}
+\RaggedRight
+\setlength{\emergencystretch}{3em}
+\setlength{\parindent}{0pt}
+
+\thispagestyle{fancy}
+\vspace*{1.1in}
+{\color{hone}\bfseries\fontsize{26}{31}\selectfont Code and Operations Guide\par}
+\vspace{6pt}
+{\color{htwo}\fontsize{18}{22}\selectfont Right Hand: Box, Setup, Calibration, Testing and Code Reference\par}
+\vspace{24pt}
+Prostheticasters, Fall 2026. \code{CapstoneBioGuitar folder in Guitar/Home}.
+
+Written by Jimmy Nguyen
+
+\vspace{18pt}
+\textbf{How this document is laid out.} Sections 1 to 6 are for working on the hand: how the system fits together, how to run the electrical box safely, how to set up the Jetson and move code to it, how to calibrate the servos, and how to run the hand and the CDR tests. Sections 7 to 13 are the code reference: every active module, what it is for, its main classes and functions, its command-line options, the constants you are most likely to change, and the file and network formats that connect the pieces. Section 14 collects the troubleshooting tables.
+
+\textbf{How this fits with the README.} The repo's \code{README.md} is the short starting guide. Where the two differ, this document follows the code as of November 18, 2026.
+\newpage
+
+\tableofcontents
+\newpage
+
+\section{System overview}
+The software drives two robot hands from a Jetson Orin Nano in the right-hand electrical box. The right hand strums: a ball-joint wrist pulled by four MG995 servos and five fingers with two HPS-0618SG servos each. The left hand, from Spring 2026, has four finger servos (no thumb) and only mimics a hand seen by a camera. A PyBullet simulation can run alongside and show the same commands live.
+
+
+\subsection{Layers}
+The code is split into layers so the simulation and the real hand can never drift apart:
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1799\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.3700\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4501\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Layer} & \textbf{Where} & \textbf{Note} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Layer} & \textbf{Where} & \textbf{Note} \\ \hline
+\endhead
+Shared motion & \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py}, \code{Sim/\allowbreak{}finger\_\allowbreak{}motion.py}, \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}, \code{Sim/\allowbreak{}motion\_\allowbreak{}link.py} & Plain Python. No PyBullet and no hardware imports. Both the sim and the hand import these files. \\ \hline
+Hardware & \code{Hardware/\allowbreak{}} & Turns motion into servo pulses and owns all safety. Everything that moves a servo goes through \code{power\_\allowbreak{}box.py}. \\ \hline
+Simulation & \code{Sim/\allowbreak{}mvmnt\_\allowbreak{}demo.py}, \code{Sim/\allowbreak{}hand.py} & Shows motion. Can play by itself or follow the real hand over UDP. \\ \hline
+Testing & \code{Testing/\allowbreak{}hand\_\allowbreak{}tests.py} & The CDR test plan, built on the \code{Hand} class. \\ \hline
+\end{longtable}}
+
+
+\subsection{One control tick}
+When the hand plays a song, the control loop runs at 50 Hz (one update per PWM frame). Each tick goes through the same steps:
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1603\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2137\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.3056\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Step} & \textbf{Code} & \textbf{In} & \textbf{Out} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Step} & \textbf{Code} & \textbf{In} & \textbf{Out} \\ \hline
+\endhead
+1. Schedule (once) & \code{strum\_\allowbreak{}motion.build\_\allowbreak{}schedule()} & Guitar Pro file, BPM, or pattern & List of strokes (start, direction, strike length, recovery length) \\ \hline
+2. Wrist pose & \code{strum\_\allowbreak{}motion.wrist\_\allowbreak{}at()} & Schedule, time t & Deviation and flexion, degrees \\ \hline
+3. Kinematics & \code{wrist\_\allowbreak{}kinematics.servo\_\allowbreak{}angles()} & Deviation, flexion & Spool angle per wrist servo (+ = reel in) \\ \hline
+4. Calibration & \code{servo\_\allowbreak{}output.wrist\_\allowbreak{}pulses()} & Spool angles & PCA9685 pulse per servo, clamped \\ \hline
+5. Output & \code{ServoBus.set()} & Board, channel, pulse & I2C write to the PCA9685 \\ \hline
+6. Sim (optional) & \code{motion\_\allowbreak{}link.PoseSender.send()} & Same angles and curls & UDP packet to \code{mvmnt\_\allowbreak{}demo.py -{}-{}follow} \\ \hline
+\end{longtable}}
+
+Fingers use a shorter path: a pose from \code{finger\_\allowbreak{}motion.py} gives a curl from 0 (straight) to 1 (curled) per servo, and \code{fingers.finger\_\allowbreak{}pulse()} maps it linearly between that servo's \code{open\_\allowbreak{}pulse} and \code{closed\_\allowbreak{}pulse}.
+
+
+\subsection{Import paths}
+Scripts add \code{Sim/\allowbreak{}} and \code{Hardware/\allowbreak{}} to \code{sys.path} themselves, so they import each other by bare module name (\code{import strum\_\allowbreak{}motion}, \code{from hand\_\allowbreak{}control import Hand}). Run every command from the repo root; file paths such as \code{Sim/\allowbreak{}MPL/\allowbreak{}right\_\allowbreak{}hand.xml} and \code{Parsing/\allowbreak{}inputs/\allowbreak{}} are relative to it.
+
+
+\subsection{Where things live}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{What} & \textbf{Where} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{What} & \textbf{Where} \\ \hline
+\endhead
+Repository & Fall 2026: \code{https:/\allowbreak{}/\allowbreak{}github.com/\allowbreak{}JimmoLimmo/\allowbreak{}CapstoneBioGuitar}, which isn't shared. Later teams keep their own copy (section 3.6). \\ \hline
+Code on the laptop (edit here) & Wherever you cloned it; on Jimmy's laptop \code{C:\textbackslash\allowbreak{}Users\textbackslash\allowbreak{}JMAMA\textbackslash\allowbreak{}Documents\textbackslash\allowbreak{}Capstone\textbackslash\allowbreak{}CapstoneBioGuitar-{}\allowbreak{}main} \\ \hline
+Code on the Jetson (run here) & \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar} \\ \hline
+Measured servo values & \code{Hardware/\allowbreak{}calibration.json} on the Jetson; a committed copy in \code{Hardware/\allowbreak{}calibration.example.json} (section 11.1) \\ \hline
+Wiring sheets (REV 3) & \code{Wiring-{}\allowbreak{}BIG.pdf}, sheets 0-5. The two ``OUTDATED'' pages at the end describe REV 1 and can be ignored. \\ \hline
+Starting guide & \code{README.md} in the repo root \\ \hline
+This guide, the CDR and the SOP & \code{docs/\allowbreak{}} in the repo \\ \hline
+\end{longtable}}
+
+
+\section{Electrical box: operation and safety}
+
+\subsection{How the box works}
+The box follows the REV 3 wiring sheets.
+
+\begin{itemize}
+  \item \textbf{Servo power is switched in hardware only.} Pressing RESET powers the relay coils. Relay K1 then feeds itself through diode D1, so the relays stay on after you let go (the ``seal-in''). The E-stop, the 70 \textdegree{}C thermostat TH1, fuse F3 or MAIN off cut the coils, both relays drop, and nothing restarts until someone presses RESET again.
+  \item \textbf{K1} switches the 5 V supply to the \code{lv} board (wrist and left hand; this rail is going to 6.4 V). \textbf{K2} switches 8.4 V to the \code{hv} board (right-hand fingers). The two supplies never share a + wire.
+  \item \textbf{The Jetson only listens.} It has no wires to the relay board. It reads the E-stop through a second contact (NC2, pin 15), and holds every servo signal off through the PCA9685 OE line (pin 31) until a script arms.
+  \item The Jetson has its own 19 V adapter. MAIN does \textbf{not} switch it, and the E-stop does not cut it.
+\end{itemize}
+
+
+\subsection{Front panel}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2350\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7650\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Control} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Control} & \textbf{What it does} \\ \hline
+\endhead
+MAIN (toggle) & Turns the 5 V rail on and off. Off also drops the relays. \\ \hline
+POWER LED & On = 5 V rail is live. \\ \hline
+RESET (push) & Latches servo power on. Only works with MAIN on and the E-stop released. \\ \hline
+SERVO LED & On = relays closed, servo power on. \\ \hline
+E-stop (pendant) & Press = all servo power off immediately, in hardware. Twist to release. Releasing does \textbf{not} restart anything. \\ \hline
+\end{longtable}}
+
+
+\subsection{Boards and addresses}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1603\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1282\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2457\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4658\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Board} & \textbf{I2C address} & \textbf{Servo power (V+)} & \textbf{Servos} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Board} & \textbf{I2C address} & \textbf{Servo power (V+)} & \textbf{Servos} \\ \hline
+\endhead
+\code{hv} & 0x40 & 8.4 V from K2 & Right-hand fingers: 10 \texttimes{} HPS-0618SG, channels 0-9 \\ \hline
+\code{lv} & 0x41 & 5 V from K1 (going to 6.4 V) & Wrist: 4 \texttimes{} MG995, channels 10-13. Left hand: 4 servos, channels 1-4. \\ \hline
+\end{longtable}}
+
+\begin{note}The wiring sheets show these two addresses the other way round. The table above is what is actually on the box (checked with \code{sudo i2cdetect -{}y -{}r 7}) and what the code uses.\end{note}
+
+\subsection{Jetson header pins used}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1389\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4060\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4551\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Pin} & \textbf{Connects to} & \textbf{Notes} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Pin} & \textbf{Connects to} & \textbf{Notes} \\ \hline
+\endhead
+1 (3.3 V) & VCC on both PCA9685 boards & Logic power only \\ \hline
+3 / 5 & SDA / SCL on both boards & I2C bus 7 \\ \hline
+9 (GND) & GND on both boards & Common ground with the box \\ \hline
+31 & OE on both boards + 10 k\textohm{} pull-up to 3.3 V & HIGH = all servo signals off. Set as GPIO in Jetson-IO. \\ \hline
+15 & E-stop NC2 + 10 k\textohm{} pull-up to pin 17 & LOW = released, HIGH = pressed or cable cut. Set as GPIO in Jetson-IO. \\ \hline
+14 (GND) & Other side of E-stop NC2 &  \\ \hline
+4 / 6 & Fan + / - &  \\ \hline
+7, 11, 13 & Nothing & Leave empty \\ \hline
+\end{longtable}}
+
+
+\subsection{Powering up}
+\begin{enumerate}
+  \item Check the E-stop is within reach and the hand is clear of people and the guitar strings.
+  \item Plug in the Jetson's 19 V adapter and let it boot.
+  \item Plug in the 5 V and 8.4 V adapters.
+  \item Turn MAIN on. The POWER LED lights.
+  \item Twist the E-stop out (released).
+  \item Press RESET. The relays click, the SERVO LED lights, and it \textbf{stays on} after you let go.
+  \item Run a script from a terminal on the Jetson (section 5). Press Enter when it says ``Press Enter to ARM''.
+\end{enumerate}
+
+
+\subsection{Stopping and powering down}
+\begin{itemize}
+  \item \textbf{Emergency:} press the E-stop. All servo power drops in hardware and the script prints SAFE and stops. To continue: release the E-stop, press RESET, and start the script again. Nothing moves by itself.
+  \item \textbf{Normal stop:} let the script finish, type \code{q}, or press Ctrl-C. The signals turn off and the servos go limp.
+  \item \textbf{Power down:} turn MAIN off, then \textbf{unplug the 8.4 V adapter}: it has no switch, and it stays live up to F2 and K2's COM screw.
+  \item \textbf{Jetson:} run \code{sudo shutdown now} and wait for it to finish before unplugging its adapter.
+\end{itemize}
+
+
+\subsection{Safety rules}
+\begin{itemize}
+  \item \textbf{Never plug a wrist servo (MG995) or a left-hand servo into the 8.4 V \code{hv} board.} They are rated to about 7 V. Only the HPS-0618SG finger servos go on \code{hv}.
+  \item \textbf{Unplug both adapters before working inside the box.} MAIN off is not enough for the 8.4 V side.
+  \item \textbf{Never connect the V+ pins of the two PCA9685 boards together.} The chain cable between them has 5 wires (GND, OE, SCL, SDA, VCC). V+ stays empty.
+  \item \textbf{Never connect 5 V to a Jetson signal pin.} Only pins 1 and 17 (3.3 V) feed the pull-ups and the PCA logic.
+  \item \textbf{Test the E-stop every session}, under load (section 2.8). A relay contact can weld shut and defeat the cut-off: replace a relay that sticks.
+  \item \textbf{Don't let a servo stall} against a stop or a tight string for more than a second or two. It gets hot; a stalled HPS-0618SG pulls up to 2.5 A.
+  \item \textbf{Run one servo script at a time.} Both boards share OE, so the first script to exit turns the signals off for the other.
+  \item The PCA9685 board LEDs are always on: they only show logic power. Never treat them as ``servo power off''.
+\end{itemize}
+
+
+\subsection{Check at the start of every session (5 minutes)}
+\begin{enumerate}
+  \item MAIN on, E-stop released, press RESET: SERVO LED on and stays on.
+  \item Press the E-stop: SERVO LED goes off. Release it: SERVO LED \textbf{stays off}.
+  \item Press RESET again: SERVO LED back on.
+  \item Run a one-servo test on a servo whose horn is free or whose string is slack (the wiggle is small, 4500 to 5300):
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/test_one_servo.py <channel> <hv|lv>
+\end{codeblock}
+%%end novalidate
+  \item Press the E-stop mid-wiggle: the servo goes limp and the terminal prints SAFE.
+  \item Run it again and press Ctrl-C mid-wiggle: it stops cleanly.
+\end{enumerate}
+
+
+\section{Jetson setup and moving code}
+
+\subsection{Setting up from scratch}
+Do these once, in order, on a new laptop or a new Jetson. Skip anything that's already done. The Jetson has no internet, so everything reaches it over a direct Ethernet cable from the laptop. The Jetson user is \code{guitar}.
+
+\begin{enumerate}
+  \item \textbf{Get the code on the laptop.} Clone your team's copy of the repo (section 3.6 if you don't have one yet), then set up the conda environment (section 3.5):
+%%begin novalidate
+\begin{codeblock}
+git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
+\end{codeblock}
+%%end novalidate
+  \item \textbf{Connect the laptop and the Jetson} with an Ethernet cable and give each end a fixed address (below).
+  \item \textbf{Put the repo on the Jetson} (below).
+  \item \textbf{One-time Jetson setup:} the \code{servo} shortcut, pins 15 and 31, the board check and the Python packages (section 3.3).
+  \item \textbf{Calibration file.} Start from the values committed in the repo, then finish calibration (section 4):
+%%begin novalidate
+\begin{codeblock}
+cp Hardware/calibration.example.json Hardware/calibration.json
+\end{codeblock}
+%%end novalidate
+  \item \textbf{Check the box} (section 2.8) before the first powered run.
+\end{enumerate}
+
+\subsubsection*{Direct Ethernet link}
+On the Jetson (monitor and keyboard), turn on SSH and give the Ethernet port \code{192.168.10.2}. The Orin Nano's port is usually \code{enP8p1s0}; \code{ip -{}br link} shows the name.
+
+%%begin novalidate
+\begin{codeblock}
+sudo systemctl enable --now ssh
+ip -br link
+sudo nmcli con add type ethernet ifname enP8p1s0 con-name direct ipv4.method manual ipv4.addresses 192.168.10.2/24
+sudo nmcli con up direct
+\end{codeblock}
+%%end novalidate
+On the laptop, open Settings, Network \& Internet, Ethernet, IP assignment, Edit, and choose Manual. Turn IPv4 on: address \code{192.168.10.1}, subnet mask \code{255.255.255.0}, gateway and DNS blank. If the cable goes into a USB Ethernet adapter, edit that adapter. Then, in PowerShell:
+
+%%begin novalidate
+\begin{codeblock}
+ping 192.168.10.2
+ssh guitar@192.168.10.2
+\end{codeblock}
+%%end novalidate
+To stop typing the password every time, add a key once:
+
+%%begin novalidate
+\begin{codeblock}
+ssh-keygen -t ed25519
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh guitar@192.168.10.2 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+\end{codeblock}
+%%end novalidate
+Don't use \code{192.168.55.x} for this: that's the Jetson's USB link.
+
+\subsubsection*{First copy of the repo on the Jetson}
+The Jetson can't clone from GitHub, so bundle the repo on the laptop and clone from the bundle. On the laptop, in the repo:
+
+%%begin novalidate
+\begin{codeblock}
+git bundle create repo.bundle HEAD main
+scp repo.bundle guitar@192.168.10.2:~/
+\end{codeblock}
+%%end novalidate
+On the Jetson:
+
+%%begin novalidate
+\begin{codeblock}
+git clone ~/repo.bundle ~/CapstoneBioGuitar
+cd ~/CapstoneBioGuitar
+git config receive.denyCurrentBranch updateInstead
+\end{codeblock}
+%%end novalidate
+The last line lets the laptop push straight into the Jetson's checked-out branch. Back on the laptop, add the Jetson as a remote:
+
+%%begin novalidate
+\begin{codeblock}
+git remote add jetson ssh://guitar@192.168.10.2/home/guitar/CapstoneBioGuitar
+\end{codeblock}
+%%end novalidate
+From then on, \code{git push jetson main} (section 3.2) updates the Jetson's files, as long as the Jetson has \code{main} checked out and no uncommitted edits of its own.
+
+
+\subsection{Moving code to the Jetson}
+The Jetson can't get on the school network. Edit and commit on the laptop, then move the commits over.
+
+
+\subsubsection*{Direct Ethernet cable (preferred)}
+The laptop is \code{192.168.10.1} and the Jetson \code{192.168.10.2}. The laptop's repo has a remote called \code{jetson} pointing at \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar} on the Jetson.
+
+%%begin novalidate
+\begin{codeblock}
+git add -A
+git commit -m "what you changed"
+git push jetson main
+\end{codeblock}
+%%end novalidate
+Push the branch you're working on. The laptop is on \code{main} now.
+
+
+\subsubsection*{USB stick (git bundle)}
+On the laptop (Git Bash or PowerShell), commit, then:
+
+%%begin novalidate
+\begin{codeblock}
+git bundle create update.bundle main
+\end{codeblock}
+%%end novalidate
+Copy \code{update.bundle} to the USB stick. On the Jetson:
+
+%%begin novalidate
+\begin{codeblock}
+cd ~/CapstoneBioGuitar
+git pull /media/guitar/<usb-name>/update.bundle main
+git log --oneline -1          # should show your latest commit message
+\end{codeblock}
+%%end novalidate
+\begin{itemize}
+  \item If the pull complains about local changes, it's usually because of cached files. Run \code{git stash}, then pull again.
+  \item If git gets in the way: copy the \code{Hardware} and \code{Sim} folders from the laptop over the Jetson's copies with the USB stick.
+  \item Backup files (\code{*.bak-{}*}) and bundles are in \code{.gitignore}. Never commit a \code{.bundle} file: they are 100+ MB and break GitHub's size limit.
+  \item \code{Hardware/\allowbreak{}calibration.json} is ignored by git too, so pulling never touches it. After calibrating, copy it back to the laptop over the committed example and commit it, so the measured values are saved in the repo. On the laptop, in the repo:
+%%begin novalidate
+\begin{codeblock}
+scp guitar@192.168.10.2:~/CapstoneBioGuitar/Hardware/calibration.json Hardware/calibration.example.json
+\end{codeblock}
+%%end novalidate
+\end{itemize}
+
+
+\subsection{One-time Jetson setup}
+
+\subsubsection*{The servo shortcut}
+GPIO and I2C need sudo, but the Python packages are installed for the \code{guitar} user, and sudo can't see them on its own. The \code{servo} shortcut fixes that, and also lets \code{-{}-{}show} windows open under sudo. Check it exists with \code{type servo}; if not, run once:
+
+%%begin novalidate
+\begin{codeblock}
+echo "alias servo='sudo DISPLAY=\$DISPLAY XAUTHORITY=\${XAUTHORITY:-\$HOME/.Xauthority} PYTHONPATH=\$(python3 -m site --user-site) python3'" >> ~/.bashrc
+source ~/.bashrc
+\end{codeblock}
+%%end novalidate
+From then on: \code{servo Hardware/\allowbreak{}test\_\allowbreak{}one\_\allowbreak{}servo.py 3 lv} instead of \code{sudo python3 ...}.
+
+
+\subsubsection*{Header pins 15 and 31 as GPIO}
+%%begin novalidate
+\begin{codeblock}
+sudo /opt/nvidia/jetson-io/jetson-io.py
+\end{codeblock}
+%%end novalidate
+\begin{enumerate}
+  \item Configure Jetson 40pin Header, then Configure header pins manually.
+  \item Make sure nothing that uses \textbf{pin 15 or pin 31} is selected (pin 15 can double as PWM). Both must be plain GPIO.
+  \item Save pin changes, then Save and reboot to reconfigure pins.
+\end{enumerate}
+
+
+\subsubsection*{Check the boards are seen}
+%%begin novalidate
+\begin{codeblock}
+sudo i2cdetect -y -r 7
+\end{codeblock}
+%%end novalidate
+You should see \textbf{40} (\code{hv}, finger board), \textbf{41} (\code{lv}, wrist and left-hand board) and \textbf{70} (an address every PCA9685 also answers to, not a third board).
+
+
+\subsubsection*{Python packages}
+\code{requirements-{}\allowbreak{}jetson.txt} lists what the Jetson needs: \code{numpy}, \code{PyGuitarPro}, the servo libraries, and OpenCV and MediaPipe for the camera scripts. PyBullet isn't in it, because the sim runs on the laptop. \code{Jetson.GPIO} comes with JetPack, and \code{Hardware/\allowbreak{}i2c\_\allowbreak{}bus.py} also works with Adafruit Blinka in place of \code{adafruit-{}\allowbreak{}extended-{}\allowbreak{}bus}. Install the packages for the \code{guitar} user, not with sudo; the \code{servo} shortcut finds them there.
+
+If the Jetson can get internet some other way (a phone's USB tethering, a hotspot):
+
+%%begin novalidate
+\begin{codeblock}
+pip3 install --user -r requirements-jetson.txt
+\end{codeblock}
+%%end novalidate
+Otherwise download the wheels on the laptop and copy them over. Match \code{-{}-{}python-{}\allowbreak{}version} to \code{python3 -{}-{}version} on the Jetson (JetPack 6 has 3.10):
+
+%%begin novalidate
+\begin{codeblock}
+pip download -r requirements-jetson.txt -d jetson_wheels --platform manylinux2014_aarch64 --python-version 3.10 --only-binary=:all:
+scp -r jetson_wheels guitar@192.168.10.2:~/
+\end{codeblock}
+%%end novalidate
+Then on the Jetson:
+
+%%begin novalidate
+\begin{codeblock}
+pip3 install --user --no-index --find-links ~/jetson_wheels -r ~/CapstoneBioGuitar/requirements-jetson.txt
+\end{codeblock}
+%%end novalidate
+If \code{pip download} finds no wheel for a package, download that one again without \code{-{}-{}platform} and \code{-{}-{}only-{}\allowbreak{}binary}; pure-Python packages install from the source file. \code{jetson\_\allowbreak{}wheels/\allowbreak{}} is in \code{.gitignore}.
+
+
+\subsection{Running scripts on the Jetson}
+\begin{itemize}
+  \item Always from a \textbf{terminal} (Ctrl + Alt + T), in \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar}. VS Code's Run button sends output to a read-only panel, so ``Press Enter to ARM'' can never be answered.
+  \item \code{python3 run.py ...} runs \textbf{without} sudo. It asks for the password itself when it starts the servo part (section 7).
+  \item A hardware script run on its own uses the shortcut: \code{servo Hardware/\allowbreak{}<script>.py}. Plain \code{sudo python3} gives a missing-module error.
+  \item \code{-{}-{}dry-{}\allowbreak{}run} runs need no sudo: \code{python3 Hardware/\allowbreak{}servo\_\allowbreak{}output.py -{}-{}dry-{}\allowbreak{}run}.
+  \item Ctrl-C stops any script safely: signals off, servos limp.
+  \item No keyboard? \code{POWERBOX\_\allowbreak{}AUTO\_\allowbreak{}ARM=\allowbreak{}5} arms after a countdown (section 5.2).
+\end{itemize}
+
+
+\subsection{Laptop setup (sim and dry runs)}
+PyBullet often has no Windows install for the newest Python, and Anaconda has been the only way to get it working so far. Set up a conda environment once, from the Anaconda Prompt:
+
+%%begin novalidate
+\begin{codeblock}
+conda create -n bioguitar python=3.12
+conda activate bioguitar
+conda install -c conda-forge pybullet
+cd C:\Users\JMAMA\Documents\Capstone\CapstoneBioGuitar-main
+pip install -r requirements.txt
+\end{codeblock}
+%%end novalidate
+Use the path where you cloned the repo if it's somewhere else. PyBullet comes from conda-forge. \code{requirements.txt} installs the rest, including OpenCV and MediaPipe for the camera mimic, and skips its Linux-only packages on Windows.
+
+\subsubsection*{Running the sim}
+Each time, activate the environment and start from the repo root. For example, both sim hands following your hands on the webcam:
+
+%%begin novalidate
+\begin{codeblock}
+conda activate bioguitar
+cd C:\Users\JMAMA\Documents\Capstone\CapstoneBioGuitar-main
+python Sim/mvmnt_demo.py --mimic --show
+\end{codeblock}
+%%end novalidate
+\code{-{}-{}mimic} moves the fingers only; the wrist stays straight. To see the wrist too, use the two-window setup below. From the same place, \code{python run.py song -{}-{}dry-{}\allowbreak{}run} opens the sim and plays the song, and \code{python run.py console -{}-{}dry-{}\allowbreak{}run} lets you type commands and watch the sim.
+
+If pip tries to build PyBullet and asks for Microsoft Visual C++, the \code{bioguitar} environment isn't active: PyBullet should come from conda-forge, not pip.
+
+\subsubsection*{Camera and sim together (no hardware)}
+This runs the real mimic script, \code{hand\_\allowbreak{}mimic.py}, in a dry run and sends its commands to the sim, so the sim shows exactly what the hand would be told to do, wrist included. Nothing needs the Jetson or the box.
+
+Record your hand once first (open, then a fist, when asked). On the laptop this writes the laptop's own \code{Hardware/\allowbreak{}calibration.json}; the Jetson's copy isn't touched:
+
+%%begin novalidate
+\begin{codeblock}
+python Hardware/hand_mimic.py --calibrate --hand both --show
+\end{codeblock}
+%%end novalidate
+Then open two Anaconda Prompts, activate \code{bioguitar} in both and \code{cd} to the repo root. Start the sim first:
+
+%%begin novalidate
+\begin{codeblock}
+python Sim/mvmnt_demo.py --follow
+\end{codeblock}
+%%end novalidate
+and the camera in the second window:
+
+%%begin novalidate
+\begin{codeblock}
+python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.0.0.1
+\end{codeblock}
+%%end novalidate
+\begin{itemize}
+  \item \code{127.\allowbreak{}0.\allowbreak{}0.\allowbreak{}1} means this computer. With the sim on another computer, use that computer's address instead.
+  \item \code{-{}-{}dry-{}\allowbreak{}run} keeps the script away from the servo boards. It still warns about uncalibrated servos; that's expected on the laptop.
+  \item Leave out \code{-{}-{}wrist} to move the fingers only, or use \code{-{}-{}hand right} to follow one hand.
+  \item Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip \code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN} or \code{WRIST\_\allowbreak{}FLEX\_\allowbreak{}SIGN} in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}. The sim and the hand get the same numbers, so if only the real hand is reversed, the wrist servos are swapped instead (section 4.4).
+  \item If the sim window shows nothing moving, the sim wasn't started first, or a firewall is blocking UDP port 5005.
+\end{itemize}
+
+\subsection{Your own copy of the repo}
+The Fall 2026 repo is on a personal GitHub account and isn't shared with later teams, so each team keeps the code in a repo of its own. A GitHub organization (free) that the whole team can own is better than one person's account: the repo stays when that person leaves.
+
+\subsubsection*{Fork it}
+If you can open the repo on GitHub, click \textbf{Fork}. The fork is yours and keeps the full history. Clone the fork (section 3.1).
+
+\subsubsection*{Make a new repo from a copy you have}
+Any copy works: a laptop clone, the Jetson's \code{\textasciitilde{}/\allowbreak{}CapstoneBioGuitar}, a \code{repo.\allowbreak{}bundle}, or a ZIP from the shared drive. On GitHub, make a new repository and leave it empty (no README, \code{.gitignore} or license), so the first push doesn't clash.
+
+From a clone (it has a \code{.git} folder), which keeps the history:
+
+%%begin novalidate
+\begin{codeblock}
+cd CapstoneBioGuitar-main
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git push -u origin --all
+\end{codeblock}
+%%end novalidate
+From a bundle, clone it first, then do the same:
+
+%%begin novalidate
+\begin{codeblock}
+git clone repo.bundle CapstoneBioGuitar-main
+\end{codeblock}
+%%end novalidate
+From a ZIP (no history):
+
+%%begin novalidate
+\begin{codeblock}
+cd CapstoneBioGuitar-main
+git init -b main
+git add -A
+git commit -m "Code from the Fall 2026 team"
+git remote add origin https://github.com/<owner>/<repo>.git
+git push -u origin main
+\end{codeblock}
+%%end novalidate
+\begin{itemize}
+  \item Check \code{.gitignore} is there before \code{git add}, so \code{venv/\allowbreak{}}, bundles and \code{calibration.json} stay out.
+  \item Git doesn't carry \code{Hardware/\allowbreak{}calibration.json}. Copy the Jetson's file into \code{calibration.example.json} and commit it (section 3.2), or the measured values are lost.
+  \item For a private repo, add teammates under Settings, Collaborators.
+  \item The Jetson doesn't care which GitHub repo the code came from: \code{git push jetson main} works the same (section 3.2).
+\end{itemize}
+
+
+\section{Calibration}
+The hand can't run until every servo it uses has its numbers. \code{Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py} finds them one servo at a time, with the tendons attached, and saves them to \code{Hardware/\allowbreak{}calibration.json}. You never edit the tables in the code: they are only defaults. When you finish:
+
+\begin{itemize}
+  \item Each wrist servo has a channel, a neutral pulse, a direction (sign) and limits.
+  \item Each finger servo has a channel, an open pulse and a closed pulse.
+  \item The scripts refuse to move a servo that is missing a value. Dry runs warn and skip it.
+\end{itemize}
+
+\code{python3 Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py -{}-{}show} prints what is saved and what is still missing (no hardware needed). Today the file has the finger channels with 1700 / 8100 as starting pulses, and the four wrist neutral pulses, but no wrist signs or limits yet. On a new Jetson with no \code{calibration.json}, start from the committed copy (section 3.1).
+
+
+\subsection{Before you start}
+\begin{enumerate}
+  \item The box is powered up as in section 2.5: MAIN on, E-stop released, RESET pressed, SERVO LED on.
+  \item The Jetson has the latest code (section 3.2).
+  \item Open a real terminal on the Jetson (Ctrl + Alt + T) and \code{cd \textasciitilde{}/\allowbreak{}CapstoneBioGuitar}.
+  \item \textbf{Slacken the string} of the servo you're about to calibrate, or be ready on the E-stop. The tool starts the servo at its saved neutral or open pulse, or at 4900 (centre) if nothing is saved, so a tight string can get yanked.
+  \item Keep a hand near the E-stop the whole time.
+\end{enumerate}
+
+\begin{note}\textbf{Never plug a wrist servo (MG995) or a left-hand servo into the 8.4 V \code{hv} board (0x40).} Wrist and left-hand servos go on \code{lv} (0x41); only the HPS-0618SG finger servos go on \code{hv}.\end{note}
+
+\subsection{How the calibration tool works}
+Start it with a servo's name, press Enter to arm, then at the prompt type a pulse (\code{4900}) or a nudge (\code{+50}, \code{-{}50}). When the servo is where you want it, type the save word and the tool writes the pulse it is holding to \code{calibration.json}. \code{show} prints that servo's entry; \code{q} quits, turns the signals off and lets the servo go limp. Under sudo the tool hands the file back to your user, so it stays editable.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.4594\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.5406\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Command} & \textbf{Use} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Command} & \textbf{Use} \\ \hline
+\endhead
+\code{servo Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py dev\_\allowbreak{}pos} & Jog one wrist servo by name (\code{dev\_\allowbreak{}pos}, \code{dev\_\allowbreak{}neg}, \code{flex\_\allowbreak{}pos}, \code{flex\_\allowbreak{}neg}). Save with \code{neutral}, \code{min}, \code{max}, \code{sign +} or \code{sign -{}}. \\ \hline
+\code{... index\_\allowbreak{}tip} & Finger servo. Save with \code{open} or \code{closed}. A number after the name (\code{index\_\allowbreak{}tip 3}) sets its channel first. \\ \hline
+\code{... left\_\allowbreak{}index} & Left-hand servo; save with \code{open} or \code{closed}. \code{left\_\allowbreak{}index 12} moves it to another channel. \\ \hline
+\code{... 13 lv} & Raw channel by number, nothing saved (wiring check). The board defaults to \code{hv}. \\ \hline
+\code{-{}-{}wrist} & All four wrist servos together through the kinematics: type \code{dev flex} in degrees \\ \hline
+\code{-{}-{}straight} & Hold the wrist at neutral \\ \hline
+\code{-{}-{}open [NAME=\allowbreak{}CHANNEL ...]} & All finger servos at their open pulse (for tying strings); optionally assign channels \\ \hline
+\code{-{}-{}swap dev} / \code{-{}-{}swap flex} & Swap a wrist pair that moves backwards (no hardware) \\ \hline
+\code{-{}-{}show} & Print what is calibrated and what is missing (no hardware) \\ \hline
+\code{-{}-{}dry-{}\allowbreak{}run} & Try any of the above with no hardware \\ \hline
+\end{longtable}}
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2137\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7863\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Pulse} & \textbf{Meaning} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Pulse} & \textbf{Meaning} \\ \hline
+\endhead
+4900 & About the centre of travel (1.5 ms) \\ \hline
+2500 - 7300 & Sensible working range, and the wrist's default limits. Stay inside it unless calibration says otherwise. \\ \hline
+1638 - 8191 & Hard limits (0.5 to 2.5 ms). The tool refuses anything outside them. \\ \hline
+\textpm{}50 / \textpm{}100 & Fine / coarse nudge. Never jump straight to an extreme. \\ \hline
+\end{longtable}}
+
+
+\subsection{Wrist servos}
+
+\subsubsection*{Channel map}
+All four wrist servos are MG995s on the \code{lv} board (0x41):
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2137\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2778\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2350\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2735\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Side of the hand} & \textbf{Code name} & \textbf{Channel} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Side of the hand} & \textbf{Code name} & \textbf{Channel} \\ \hline
+\endhead
+North & Back of the hand & \code{flex\_\allowbreak{}pos} & lv 12 \\ \hline
+South & Palm & \code{flex\_\allowbreak{}neg} & lv 13 \\ \hline
+Pinky side & Pinky & \code{dev\_\allowbreak{}pos} & lv 10 \\ \hline
+Thumb side & Thumb & \code{dev\_\allowbreak{}neg} & lv 11 \\ \hline
+\end{longtable}}
+
+If a servo is plugged into a different column, move the plug rather than changing the code. The channel numbers are printed on the board next to each 3-pin column (0-15).
+
+
+\subsubsection*{Calibrate each servo (dev\_pos, dev\_neg, flex\_pos, flex\_neg)}
+\begin{enumerate}
+  \item Start the tool by name and press Enter to arm:
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/calibrate_servo.py flex_pos
+\end{codeblock}
+%%end novalidate
+  \item \textbf{Check it's the right servo.} Nudge \code{+100}, then \code{-{}100}. Only the servo you expect should move. If another one moves, fix the plug.
+  \item \textbf{Neutral.} Hold the wrist straight. Nudge in steps of 50 until the string is exactly snug: not slack, not straining. Type \code{neutral}.
+  \item \textbf{Direction.} Nudge \code{+200}. If the string winds in, type \code{sign +}; if it pays out, \code{sign -{}}. Type the neutral pulse to go back.
+  \item \textbf{Pull direction.} Reeling in North alone should bend the wrist toward the back of the hand, South toward the palm, and the pinky and thumb servos sideways toward their own side. If not, the tendon isn't routed the way the CAD shows: stop and fix it.
+  \item \textbf{Limits.} Jog in steps of 100 toward the low-pulse end until the wrist reaches its stop, back off about 100, and type \code{min}. Do the same at the high-pulse end and type \code{max}.
+  \item Go back to neutral and type \code{q}.
+\end{enumerate}
+
+
+\subsubsection*{Record sheet}
+The tool saves the values for you. The sheet is a paper copy in case \code{calibration.json} is lost.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2350\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.0748\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1709\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1709\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1741\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1741\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Ch} & \textbf{neutral} & \textbf{sign} & \textbf{min} & \textbf{max} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Ch} & \textbf{neutral} & \textbf{sign} & \textbf{min} & \textbf{max} \\ \hline
+\endhead
+North (flex\_pos) & 12 &  &  &  &  \\ \hline
+South (flex\_neg) & 13 &  &  &  &  \\ \hline
+Pinky (dev\_pos) & 10 &  &  &  &  \\ \hline
+Thumb (dev\_neg) & 11 &  &  &  &  \\ \hline
+\end{longtable}}
+
+
+\subsubsection*{Two one-time checks}
+\begin{itemize}
+  \item \textbf{Pulse scale.} \code{PULSE\_\allowbreak{}PER\_\allowbreak{}SERVO\_\allowbreak{}DEG} in \code{servo\_\allowbreak{}output.py} assumes 0.5-2.5 ms over 180\textdegree{}. Command neutral \textpm{} 1638 on a free servo: the horn should turn about 45\textdegree{} each way. If not, adjust that constant.
+  \item \textbf{Geometry.} The constants at the top of \code{Hardware/\allowbreak{}wrist\_\allowbreak{}kinematics.py} were measured from the built wrist on 2026-11-17 (section 9.3). With them a servo turns about 2.68\textdegree{} per wrist degree. Re-measure them if the wrist parts change.
+\end{itemize}
+
+
+\subsection{Check the whole wrist}
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/calibrate_servo.py --wrist
+\end{codeblock}
+%%end novalidate
+This needs a neutral pulse for all four wrist servos. Type poses as \code{deviation flexion} in degrees; all four servos move together through the kinematics.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1389\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4487\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4124\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Type} & \textbf{Expected} & \textbf{If it's wrong} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Type} & \textbf{Expected} & \textbf{If it's wrong} \\ \hline
+\endhead
+\code{25 0} & The wrist swings toward the pinky side: the up-strum ready side & Quit and run \code{calibrate\_\allowbreak{}servo.py -{}-{}swap dev} \\ \hline
+\code{-{}20 0} & The wrist swings toward the thumb side: the down-strum follow-through & Same swap as above \\ \hline
+\code{0 20} & Lift: the hand bends toward the back of the hand (North pulls) & \code{calibrate\_\allowbreak{}servo.py -{}-{}swap flex} \\ \hline
+\code{25 20}, \code{-{}20 20} & Combined poses & - \\ \hline
+\code{0 0} & Back to straight. Always end here before \code{q}. & - \\ \hline
+\end{longtable}}
+
+At every pose all four strings should be snug: none slack, none straining. If they aren't, the geometry constants don't match the parts. A line ending in \code{<-{}-{} at its limit} means that servo hit its \code{min} or \code{max} pulse. \code{-{}-{}swap} moves the pair's whole entries (channel, neutral, sign and limits) together, so nothing has to be re-measured.
+
+
+\subsection{Finger servos}
+Ten HPS-0618SG servos on the \code{hv} board (0x40), two per finger: \code{<finger>\_\allowbreak{}base} (bottom segment) and \code{<finger>\_\allowbreak{}tip} (upper two segments together). The servo horns are labeled according to what they control. As an example the servo that controls \code{thumb\_base} is marked TB. Their channels are already saved:
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2564\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2564\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4872\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Finger} & \textbf{Channels (base, tip)} & \textbf{Servos} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Finger} & \textbf{Channels (base, tip)} & \textbf{Servos} \\ \hline
+\endhead
+Thumb & hv 0, 1 & \code{thumb\_\allowbreak{}base}, \code{thumb\_\allowbreak{}tip} \\ \hline
+Index & hv 3, 2 & \code{index\_\allowbreak{}base}, \code{index\_\allowbreak{}tip} \\ \hline
+Middle & hv 4, 5 & \code{middle\_\allowbreak{}base}, \code{middle\_\allowbreak{}tip} \\ \hline
+Ring & hv 6, 7 & \code{ring\_\allowbreak{}base}, \code{ring\_\allowbreak{}tip} \\ \hline
+Pinky & hv 8, 9 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
+\end{longtable}}
+
+To tie the strings, put every finger servo at its open pulse with \code{servo Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py -{}-{}open}.
+
+
+\subsubsection*{Calibrate each servo}
+\begin{enumerate}
+  \item Start the tool by name (it already knows the channel):
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/calibrate_servo.py index_tip
+\end{codeblock}
+%%end novalidate
+  \item \textbf{Open:} finger straight, tendon just snug. Nudge in steps of 50, then type \code{open}.
+  \item \textbf{Closed:} nudge toward curled until the segment \textbf{first touches its stop}, then type \code{closed}. Don't push past it: a stalled HPS-0618SG pulls up to 2.5 A and gets hot within seconds.
+  \item Go back to the open pulse and type \code{q}.
+\end{enumerate}
+
+
+\subsubsection*{Record sheet}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2991\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1709\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2650\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.2650\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Channel} & \textbf{open} & \textbf{closed} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Servo} & \textbf{Channel} & \textbf{open} & \textbf{closed} \\ \hline
+\endhead
+thumb\_base & 0 &  &  \\ \hline
+thumb\_tip & 1 &  &  \\ \hline
+index\_base & 3 &  &  \\ \hline
+index\_tip & 2 &  &  \\ \hline
+middle\_base & 4 &  &  \\ \hline
+middle\_tip & 5 &  &  \\ \hline
+ring\_base & 6 &  &  \\ \hline
+ring\_tip & 7 &  &  \\ \hline
+pinky\_base & 8 &  &  \\ \hline
+pinky\_tip & 9 &  &  \\ \hline
+\end{longtable}}
+
+
+\subsection{Try one finger, then the pick poses}
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/hand_console.py --no-wrist --fingers index
+\end{codeblock}
+%%end novalidate
+In the console, type \code{finger index 0.3}, then \code{servo index\_\allowbreak{}tip 0.6}, then \code{open}. Curl is 0 = straight to 1 = fully curled. Type \code{help} for every command and \code{q} to park and quit.
+
+Once all ten fingers are done, tune the pick poses: \code{pose pick\_\allowbreak{}ready}, adjust with \code{finger} / \code{servo}, then \code{save pick\_\allowbreak{}ready} writes the pose to \code{calibration.json}. Do the same for \code{pick\_\allowbreak{}grip}. Taking the pick from a holder has been cut, and the team may strum with the side of the thumb instead of a pick; in that case skip the pick poses.
+
+
+\subsection{Left hand}
+The four left-hand servos are on \code{lv} channels 1-4 with last year's pulses (1638 open, 7000 closed). Channels 10-13 on that board are the wrist; 0, 5-9, 14 and 15 are spare.
+
+%%begin novalidate
+\begin{codeblock}
+python3 Hardware/left_hand.py --dry-run --show      # check the tracking, nothing moves
+servo Hardware/calibrate_servo.py left_index        # jog, then: open / closed
+\end{codeblock}
+%%end novalidate
+The five left-hand servos stall at about 2 A each, so together they can use the whole 10 A 5 V supply. That is fine for the mimic in free air on its own, but not for running alongside the wrist.
+
+
+\subsection{Camera mimic ranges}
+The camera mimic needs to know how far your own fingers bend. Record them once (nothing moves):
+
+%%begin novalidate
+\begin{codeblock}
+python3 Hardware/hand_mimic.py --calibrate --hand both --show
+\end{codeblock}
+%%end novalidate
+Hold your hand open, then in a fist, when asked. The ranges and the wrist's straight pose are saved in the \code{tracking} section of \code{calibration.json}.
+
+
+\section{Running the hand}
+
+\subsection{Before every session}
+\begin{itemize}
+  \item Box powered up and the E-stop checked (sections 2.5 and 2.8).
+  \item Calibration values saved for the servos you'll use (section 4). The scripts refuse to move servos that aren't calibrated.
+  \item On the Jetson, in a terminal: \code{cd \textasciitilde{}/\allowbreak{}CapstoneBioGuitar}.
+  \item Someone has a hand on the E-stop for every powered run.
+\end{itemize}
+
+
+\subsection{How every script behaves}
+\begin{enumerate}
+  \item It starts with the servo signals off and checks the E-stop. If the E-stop is pressed, it refuses to start.
+  \item It asks you to press Enter to arm. Servo power comes from the box: press RESET first if the SERVO LED is off.
+  \item On Enter it writes every servo's home pulse, then turns the signals on. The hand eases into its first pose instead of jumping.
+  \item E-stop at any time: everything drops, the script prints SAFE and stops. It never re-arms by itself.
+  \item On any exit (finished, \code{q}, Ctrl-C, crash, SIGTERM) the signals turn off and the servos go limp.
+\end{enumerate}
+
+\textbf{No keyboard on the Jetson?} Put \code{env POWERBOX\_\allowbreak{}AUTO\_\allowbreak{}ARM=\allowbreak{}5} after sudo and the script arms itself after a 5-second countdown. The E-stop and Ctrl-C still cancel it:
+
+%%begin novalidate
+\begin{codeblock}
+sudo env POWERBOX_AUTO_ARM=5 PYTHONPATH=$(python3 -m site --user-site) python3 Hardware/test_one_servo.py 3 lv
+\end{codeblock}
+%%end novalidate
+
+\subsection{Command cheat sheet}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.4915\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.5085\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Command} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Command} & \textbf{What it does} \\ \hline
+\endhead
+\code{python3 run.py} & Console (type commands to the hand) with the sim alongside \\ \hline
+\code{python3 run.py song -{}-{}wrist-{}\allowbreak{}only -{}-{}speed 0.25} & Wrist strum only, quarter speed \\ \hline
+\code{python3 run.py song} & Full hand: fingers hold the grip, the wrist strums at real speed \\ \hline
+\code{python3 run.py pick} & Hand-off pick grip, held so you can tug the pick \\ \hline
+\code{python3 run.py mimic -{}-{}show} & Camera mimic, both hands \\ \hline
+\code{python3 run.py test strum -{}-{}cycles 20} & A CDR test (section 6) \\ \hline
+\code{python3 Hardware/\allowbreak{}servo\_\allowbreak{}output.py -{}-{}dry-{}\allowbreak{}run} & No hardware: prints the strum schedule and servo demand \\ \hline
+\code{python3 Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py -{}-{}show} & What is calibrated and what is missing \\ \hline
+\code{servo Hardware/\allowbreak{}test\_\allowbreak{}one\_\allowbreak{}servo.py 3 lv} & Wiggle one servo (channel, board \code{hv}/\code{lv} or 0x40/0x41). Wiring check. \\ \hline
+\code{servo Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py ...} & Calibration (section 4) \\ \hline
+\end{longtable}}
+
+Add \code{-{}-{}no-{}\allowbreak{}sim} to any \code{run.py} command to run the hand without the sim. Every hand script takes \code{-{}-{}dry-{}\allowbreak{}run} (no hardware) and \code{-{}-{}sim-{}\allowbreak{}ip <address>} (show the same motion live in the PyBullet sim).
+
+
+\subsection{Wrist strum, step by step}
+\begin{enumerate}
+  \item Dry run first. It prints the schedule and warns if a servo would hit a limit or turn faster than it can:
+%%begin novalidate
+\begin{codeblock}
+python3 Hardware/servo_output.py --dry-run
+\end{codeblock}
+%%end novalidate
+  \item Quarter speed, wrist only. Watch that the strum sweeps across the strings and the lift clears them on the way back:
+%%begin novalidate
+\begin{codeblock}
+python3 run.py song --wrist-only --speed 0.25
+\end{codeblock}
+%%end novalidate
+  \item If the lift dips \textbf{into} the guitar instead of clearing it, flip the sign of \code{LIFT\_\allowbreak{}FLEX\_\allowbreak{}DEG} in \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py}.
+  \item Then \code{-{}-{}speed 0.5}, then \code{-{}-{}speed 1.0}.
+  \item At the end of every run the wrist eases back to straight, then the signals turn off.
+\end{enumerate}
+
+The song and tempo live at the top of \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py}: \code{SONG\_\allowbreak{}FILE} (a Guitar Pro file in \code{Parsing/\allowbreak{}inputs/\allowbreak{}}, or \code{None} for constant tempo), \code{BPM}, \code{STRUM\_\allowbreak{}DIRECTIONS} and the wrist angles (section 8.1). \code{-{}-{}song}, \code{-{}-{}bpm} and \code{-{}-{}pattern} override them for one run, e.g. \code{python3 run.py song -{}-{}pattern D-{}\allowbreak{}DU-{}\allowbreak{}UDU -{}-{}bpm 90 -{}-{}repeats 4}.
+
+\begin{note}\textbf{Strike speed.} The CDR's 0.12 s strike needs about 563\textdegree{}/s at the wrist, which is about 1500\textdegree{}/s at the servo with the measured geometry. The MG995 is rated about 375\textdegree{}/s (6 V, no load), so at full speed the wrist will lag the strike. \code{-{}-{}speed 0.25} brings the peak down to about the rating. To close the gap: a larger spool radius, tie points closer to the ball, a longer \code{STRIKE\_\allowbreak{}DURATION} or a narrower sweep.\end{note}
+
+\subsection{Fingers and the console}
+%%begin novalidate
+\begin{codeblock}
+python3 run.py console                                     # whole hand, with the sim
+servo Hardware/hand_console.py --no-wrist --fingers index  # just one finger, no sim
+\end{codeblock}
+%%end novalidate
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2991\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7009\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Console command} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Console command} & \textbf{What it does} \\ \hline
+\endhead
+\code{help} & List every command \\ \hline
+\code{poses} / \code{pose NAME} & List the named poses / move to one (\code{open}, \code{fist}, \code{pick\_\allowbreak{}ready}, \code{pick\_\allowbreak{}grip}...) \\ \hline
+\code{finger NAME CURL [TIP]} & One finger: 0 = straight, 1 = fully curled. Optional separate tip curl. \\ \hline
+\code{servo NAME CURL} & One finger servo, e.g. \code{servo index\_\allowbreak{}tip 0.4} \\ \hline
+\code{wrist DEV FLEX} & Wrist angles in degrees, e.g. \code{wrist 25 0} (limited to \textpm{}30 and \textpm{}25) \\ \hline
+\code{strum [PATTERN] [N] [BPM]} & N eighth-note strokes, e.g. \code{strum DU 8 90} (default \code{D 4 60}) \\ \hline
+\code{song [SPEED]} & Play the song set in \code{strum\_\allowbreak{}motion.py} \\ \hline
+\code{pick} / \code{drop} & Grip the pick (hand-off) / let it go \\ \hline
+\code{open} / \code{home} / \code{park} & Fingers open / wrist straight / both \\ \hline
+\code{time SECONDS} & How long each move takes (default 0.6) \\ \hline
+\code{show} & Current pose and the pulses being sent \\ \hline
+\code{save NAME} & Save the current finger pose to \code{calibration.json} \\ \hline
+\code{q} & Park and quit \\ \hline
+\end{longtable}}
+
+
+\subsection{Pick}
+\code{python3 run.py pick} forms \code{pick\_\allowbreak{}ready}, asks you to lay the pick on the index finger, then closes to \code{pick\_\allowbreak{}grip} and holds it 5 s so you can tug the pick (\code{-{}-{}hold 10} holds longer). Currently, taking the pick from a holder (\code{-{}-{}holder}) is not functional, so \code{HOLDER\_\allowbreak{}WRIST} and \code{LIFT\_\allowbreak{}WRIST} in \code{pick\_\allowbreak{}up.py} stay placeholders.
+
+
+\subsection{Camera mimic}
+\code{hand\_\allowbreak{}mimic.py} reads whether the hand in view is a left or a right and drives the matching robot hand; the other one eases open. The sim shows both hands' commands.
+
+%%begin novalidate
+\begin{codeblock}
+python3 Hardware/hand_mimic.py --dry-run --show   # check the tracking, nothing moves
+python3 run.py mimic --show                       # the real thing, with the sim
+python3 run.py mimic --hand right                 # always the right hand
+\end{codeblock}
+%%end novalidate
+\begin{itemize}
+  \item First run: hold up your right hand and read the top line of the preview. If it says \code{left}, add \code{-{}-{}swap-{}\allowbreak{}hands}.
+  \item The hands swap only after the camera has seen the other hand for 0.5 s, so a one-frame mislabel does nothing.
+  \item \code{-{}-{}wrist} also drives the robot wrist from your right hand's tilt (needs \code{-{}-{}calibrate} first, section 4.8).
+  \item Servos with no calibration stay still: they move only in the sim.
+  \item If the hand lags real moves, raise \code{BETA}; if it shakes when you hold still, lower \code{MIN\_\allowbreak{}CUTOFF\_\allowbreak{}HZ} (both in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}).
+  \item Sim only, no Jetson: \code{python Sim/\allowbreak{}mvmnt\_\allowbreak{}demo.py -{}-{}mimic -{}-{}show} (fingers only). For the wrist too, run the camera and the sim together (section 3.5).
+\end{itemize}
+
+
+\subsection{Live sim alongside the hand}
+\code{run.py} does this for you on the Jetson's own desktop. To show the sim on the laptop instead, start it there first:
+
+%%begin novalidate
+\begin{codeblock}
+python Sim/mvmnt_demo.py --follow
+\end{codeblock}
+%%end novalidate
+then run the hand script on the Jetson with the laptop's address, e.g. \code{-{}-{}sim-{}\allowbreak{}ip 192.168.10.1} on the direct cable.
+
+\begin{itemize}
+  \item If nothing moves, allow UDP port 5005 through the laptop's firewall.
+  \item If the sim runs ahead of the hand, measure the gap on video and add it with \code{-{}-{}delay}, e.g. \code{-{}-{}delay 0.08} (\code{-{}-{}sim-{}\allowbreak{}delay} through \code{run.py}).
+  \item The sim shows commands, not measured motion. If the sim stops, the servos keep running.
+\end{itemize}
+
+
+\section{CDR tests}
+\code{Testing/\allowbreak{}hand\_\allowbreak{}tests.py} runs the three CDR tests and writes one CSV per run to \code{Testing/\allowbreak{}results/\allowbreak{}} (dry runs go to \code{Testing/\allowbreak{}results/\allowbreak{}dry\_\allowbreak{}run/\allowbreak{}}). Rehearse every test first with \code{-{}-{}dry-{}\allowbreak{}run -{}-{}auto}: the prompts are answered with made-up values, marked SIMULATED. Other common options: \code{-{}-{}sim-{}\allowbreak{}ip} and \code{-{}-{}realtime}.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1603\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.3739\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4658\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Command} & \textbf{Pass criteria (from the CDR)} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Command} & \textbf{Pass criteria (from the CDR)} \\ \hline
+\endhead
+Fingertip accuracy & \code{servo Testing/\allowbreak{}hand\_\allowbreak{}tests.py finger index -{}-{}segment tip} & Fingertip within \textpm{}0.02 in of the target in 9 of 10 attempts, at spacings 0.25, 0.20, 0.15 and 0.10 in \\ \hline
+Strum repeatability & \code{servo Testing/\allowbreak{}hand\_\allowbreak{}tests.py strum -{}-{}cycles 20 -{}-{}bpm 60} & At least 90\% good cycles, 0 unintended string contacts, pattern time within 10\% \\ \hline
+Tempo & \code{servo Testing/\allowbreak{}hand\_\allowbreak{}tests.py tempo -{}-{}bpm 60} (then 90, then 120) & Each stroke interval within \textpm{}10\% of the target, in at least 90\% of cycles \\ \hline
+Re-score & \code{python3 Testing/\allowbreak{}hand\_\allowbreak{}tests.py report <file>.csv -{}-{}fps 120} & Scores a results CSV again \\ \hline
+\end{longtable}}
+
+Through \code{run.py} the same tests are \code{python3 run.py test strum -{}-{}cycles 20} and so on.
+
+
+\subsection{Options}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1603\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.8397\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Options} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Options} \\ \hline
+\endhead
+\code{finger FINGER} & \code{-{}-{}segment base\textbar{}tip}, \code{-{}-{}other CURL} (the other segment's curl), \code{-{}-{}spacing IN} (one spacing only), \code{-{}-{}targets N}, \code{-{}-{}remap} \\ \hline
+\code{strum} & \code{-{}-{}cycles} (20), \code{-{}-{}bpm} (60), \code{-{}-{}strokes} (8), \code{-{}-{}speed} (0.25 for first runs), \code{-{}-{}pattern DU}, \code{-{}-{}rest}, \code{-{}-{}no-{}\allowbreak{}fingers} \\ \hline
+\code{tempo} & \code{-{}-{}bpm} (required: 60, 90, 120), \code{-{}-{}cycles} (10), \code{-{}-{}fps} (120), \code{-{}-{}pattern}, \code{-{}-{}rest}, \code{-{}-{}no-{}\allowbreak{}fingers} \\ \hline
+\code{report FILE} & \code{-{}-{}fps} \\ \hline
+\end{longtable}}
+
+\code{-{}-{}no-{}\allowbreak{}fingers} is for when the pick is clamped or taped instead of gripped. The finger test first measures a curl-to-position map per servo (11 curls, 0 to 1) and saves it; \code{-{}-{}remap} measures it again.
+
+
+\subsection{Tempo test: filming and scoring}
+\begin{enumerate}
+  \item Film the run at \textbf{120 fps} with the strings in view.
+  \item For each stroke, find the frame of first string contact and type it into the CSV's \code{contact\_\allowbreak{}frame} column.
+  \item Score it:
+%%begin novalidate
+\begin{codeblock}
+python3 Testing/hand_tests.py report Testing/results/<file>.csv --fps 120
+\end{codeblock}
+%%end novalidate
+  \item One frame at 120 fps is 8.3 ms, a third of the \textpm{}10\% allowance at 120 BPM. Count frames carefully.
+\end{enumerate}
+
+The CSV columns are in section 11.4.
+
+
+\section{Entry point: run.py}
+\code{run.py} starts the hand and the sim together with one command. It opens \code{Sim/\allowbreak{}mvmnt\_\allowbreak{}demo.py -{}-{}follow} on UDP port 5005, waits up to \code{SIM\_\allowbreak{}WAIT\_\allowbreak{}S} (20 s) for it to start listening, then runs the chosen hand script with \code{-{}-{}sim-{}\allowbreak{}ip 127.0.0.1} under sudo. If a sim is already listening on the port it reuses it. Run it \textbf{without} sudo: it asks for the password itself, because the sim needs your desktop session and sudo's Python can't see user-installed packages.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1923\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.3632\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.4444\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Mode} & \textbf{Runs} & \textbf{Example} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Mode} & \textbf{Runs} & \textbf{Example} \\ \hline
+\endhead
+\code{console} (default) & \code{Hardware/\allowbreak{}hand\_\allowbreak{}console.py} & \code{python3 run.py} \\ \hline
+\code{song} & \code{Hardware/\allowbreak{}servo\_\allowbreak{}output.py} & \code{python3 run.py song -{}-{}wrist-{}\allowbreak{}only -{}-{}speed 0.25} \\ \hline
+\code{pick} & \code{Hardware/\allowbreak{}pick\_\allowbreak{}up.py} & \code{python3 run.py pick} \\ \hline
+\code{test} & \code{Testing/\allowbreak{}hand\_\allowbreak{}tests.py} & \code{python3 run.py test strum -{}-{}cycles 20} \\ \hline
+\code{mimic} & \code{Hardware/\allowbreak{}hand\_\allowbreak{}mimic.py} & \code{python3 run.py mimic -{}-{}show} \\ \hline
+\end{longtable}}
+
+Options of its own: \code{-{}-{}no-{}\allowbreak{}sim} (hand only) and \code{-{}-{}sim-{}\allowbreak{}delay S} (holds each sim pose back S seconds to match servo lag). Every other argument is passed through to the hand script. \code{-{}-{}help} and \code{test report} run without the sim or sudo.
+
+
+\section{Shared motion modules (Sim/)}
+
+\subsection{strum\_motion.py: strum choreography}
+Builds the stroke schedule and answers ``where is the wrist at time t''. This is the one place to change how the hand strums.
+
+
+\subsubsection*{Constants}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2885\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1816\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.5299\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{Value} & \textbf{Meaning} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{Value} & \textbf{Meaning} \\ \hline
+\endhead
+\code{SONG\_\allowbreak{}FILE}, \code{SONG\_\allowbreak{}TRACK} & \code{Apollo-{}\allowbreak{}Live.gp3}, 1 & Default song and track. \code{None} gives constant tempo. \\ \hline
+\code{BPM} & 90 & Tempo when there is no song \\ \hline
+\code{STRUM\_\allowbreak{}INTERVAL\_\allowbreak{}BEATS} & 1.0 & Constant tempo: one strum per beat (0.5 = eighths) \\ \hline
+\code{STRUM\_\allowbreak{}DIRECTIONS} & \code{[\textquotedbl{}D\textquotedbl{}]} & Cycled per stroke. \code{[\textquotedbl{}D\textquotedbl{},\allowbreak{}\textquotedbl{}U\textquotedbl{}]} alternates; \code{\textquotedbl{}auto\textquotedbl{}} = down on the beat, up off it \\ \hline
+\code{PATTERN\_\allowbreak{}SLOT\_\allowbreak{}BEATS}, \code{PATTERN\_\allowbreak{}REPEATS} & 0.5, 4 & A pattern has one character per eighth note; played 4 times \\ \hline
+\code{STRIKE\_\allowbreak{}DURATION} & 0.12 s & Time to sweep across the strings \\ \hline
+\code{CONTACT\_\allowbreak{}POINT} & 0.5 & Fraction of the strike at which the pick meets the strings; that moment lands on the note \\ \hline
+\code{RECOVER\_\allowbreak{}DURATION} & 0.18 s & Lifted return, only used when the next stroke goes the same way (and after the last stroke) \\ \hline
+\code{WRIST\_\allowbreak{}YAW\_\allowbreak{}DOWN\_\allowbreak{}DEG}, \code{WRIST\_\allowbreak{}YAW\_\allowbreak{}UP\_\allowbreak{}DEG} & -20, +25 & Deviation at the end of a down-stroke and an up-stroke \\ \hline
+\code{LIFT\_\allowbreak{}FLEX\_\allowbreak{}DEG} & 20 & Flexion lift during a recovery. Flip the sign if it dips into the guitar. \\ \hline
+\code{GRIP\_\allowbreak{}CURL} & 1.0 & Sim finger curl for the default fist \\ \hline
+\end{longtable}}
+
+
+\subsubsection*{Functions}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3846\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6154\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Function} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Function} & \textbf{What it does} \\ \hline
+\endhead
+\code{build\_\allowbreak{}schedule(song,\allowbreak{} track,\allowbreak{} bpm,\allowbreak{} pattern,\allowbreak{} repeats,\allowbreak{} directions)} & Main entry. Song notes, constant tempo or a pattern, to a list of strokes \code{(start,\allowbreak{} direction,\allowbreak{} strike\_\allowbreak{}duration,\allowbreak{} recover\_\allowbreak{}duration)}. Raises \code{ValueError} on settings that make no sense. Falls back to constant tempo, with a printed reason, if the song can't load. \\ \hline
+\code{add\_\allowbreak{}song\_\allowbreak{}args(parser)}, \code{schedule\_\allowbreak{}from\_\allowbreak{}args(args)} & Add \code{-{}-{}song -{}-{}track -{}-{}bpm -{}-{}pattern -{}-{}repeats -{}-{}directions} to any script, and build the schedule from them \\ \hline
+\code{song\_\allowbreak{}onsets(path,\allowbreak{} track)} & Note start times from a Guitar Pro file through \code{Parsing/\allowbreak{}GuitarProReader.py}. Rests only widen gaps. \\ \hline
+\code{tempo\_\allowbreak{}onsets()}, \code{fallback\_\allowbreak{}onsets()}, \code{pattern\_\allowbreak{}onsets()} & Evenly spaced onsets for constant tempo or a pattern \\ \hline
+\code{parse\_\allowbreak{}pattern(text)} & \code{\textquotedbl{}D-{}\allowbreak{}DU-{}\allowbreak{}UDU\textquotedbl{}} to slots and strokes; \code{-{}} or \code{.} is a slot with no stroke \\ \hline
+\code{schedule\_\allowbreak{}from\_\allowbreak{}onsets(onsets,\allowbreak{} directions)} & Places each strike so its contact point lands on the onset, and shortens strikes when onsets are close so they never overlap \\ \hline
+\code{wrist\_\allowbreak{}at(schedule,\allowbreak{} t)} & Returns \code{(deviation,\allowbreak{} flexion,\allowbreak{} stroke\_\allowbreak{}index)} at time t, angles in degrees. \code{stroke\_\allowbreak{}index} is -1 before the first stroke. \\ \hline
+\code{ready\_\allowbreak{}yaw(direction)}, \code{follow\_\allowbreak{}yaw(direction)} & Deviation where a stroke starts and where it ends \\ \hline
+\code{pose(yaw\_\allowbreak{}deg,\allowbreak{} flex\_\allowbreak{}deg,\allowbreak{} fingers)} & Full 16-joint target dict in radians for the MPL sim hand \\ \hline
+\code{smooth(t)} & Smoothstep easing used for every move \\ \hline
+\end{longtable}}
+
+Stroke behaviour: a down-stroke sweeps from +25 to -20 degrees; an up-stroke is the mirror. Alternating D and U needs no return trip, because each stroke ends where the next one starts. Two strokes the same way need a return, and the wrist lifts by \code{LIFT\_\allowbreak{}FLEX\_\allowbreak{}DEG} on the way so the pick doesn't drag back through the strings. Rests add waiting time only; stroke speed doesn't change with tempo.
+
+
+\subsection{finger\_motion.py: finger poses}
+A pose is a dict \code{\{servo name: curl\}}, curl 0 to 1. Right-hand servo names are \code{<finger>\_\allowbreak{}base} and \code{<finger>\_\allowbreak{}tip} for thumb, index, middle, ring and pinky (\code{SERVO\_\allowbreak{}NAMES}). Left-hand names are \code{left\_\allowbreak{}index} to \code{left\_\allowbreak{}pinky} (\code{LEFT\_\allowbreak{}SERVO\_\allowbreak{}NAMES}).
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3526\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6474\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endhead
+\code{make\_\allowbreak{}pose(default,\allowbreak{} **fingers)} & \code{make\_\allowbreak{}pose(0.0,\allowbreak{} index=\allowbreak{}0.5,\allowbreak{} thumb=\allowbreak{}(0.7,\allowbreak{} 0.4))}: a number sets both segments, a pair sets (base, tip) \\ \hline
+\code{blend(a,\allowbreak{} b,\allowbreak{} s)}, \code{clamp\_\allowbreak{}pose(pose)} & Interpolate between poses; clamp curls to 0..1 \\ \hline
+\code{OPEN}, \code{RELAXED}, \code{FIST}, \code{PICK\_\allowbreak{}READY}, \code{PICK\_\allowbreak{}GRIP} & Named poses. \code{PICK\_\allowbreak{}READY} forms the index platform with the thumb open; \code{PICK\_\allowbreak{}GRIP} presses the thumb onto the pick. Starting guesses. \\ \hline
+\code{NAMED\_\allowbreak{}POSES}, \code{set\_\allowbreak{}pose(name,\allowbreak{} pose)} & Lookup table, and replace or add a pose (poses saved from \code{hand\_\allowbreak{}console.py} are loaded through this). \code{open} is home and can't change. \\ \hline
+\code{sim\_\allowbreak{}joints(pose)}, \code{left\_\allowbreak{}sim\_\allowbreak{}joints(curls)} & Curls to MPL joint angles for the sim \\ \hline
+\end{longtable}}
+
+
+\subsection{motion\_link.py: hand to sim over UDP}
+Sends poses from the hand scripts to the sim on UDP port 5005 (\code{DEFAULT\_\allowbreak{}PORT}).
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2991\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7009\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Class / function} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Class / function} & \textbf{What it does} \\ \hline
+\endhead
+\code{PoseSender(host,\allowbreak{} port)} & Used inside the servo loop. \code{send(dev,\allowbreak{} flex,\allowbreak{} fingers,\allowbreak{} left)} never blocks and never raises. \\ \hline
+\code{PoseReceiver(port)} & Sim side. \code{drain(follower,\allowbreak{} now)} moves every waiting packet into the follower. \\ \hline
+\code{PoseFollower(delay)} & Holds poses back by \code{delay} seconds. \code{poll(now)} returns the newest pose that is due, so a slow sim jumps ahead instead of falling behind. \\ \hline
+\code{encode\_\allowbreak{}pose()}, \code{decode\_\allowbreak{}pose()} & Packet format (section 11.2) \\ \hline
+\end{longtable}}
+
+
+\subsection{hand\_tracking.py: camera to finger curls}
+Shared by \code{hand\_\allowbreak{}mimic.py}, \code{left\_\allowbreak{}hand.py} and the sim's \code{-{}-{}mimic} mode. Uses MediaPipe's hand landmarker (\code{MediaPipe/\allowbreak{}hand\_\allowbreak{}landmarker.task}) in video mode and its 3-D world landmarks, so a finger reads the same however the hand is turned.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2991\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7009\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it does} \\ \hline
+\endhead
+\code{Camera(index,\allowbreak{} hands,\allowbreak{} swap)} & Webcam and tracker. \code{read()} gives \code{(frame,\allowbreak{} [Seen])}; \code{show()} draws the preview (\code{q} quits). \\ \hline
+\code{Seen} & One hand in a frame: label (left/right), image landmarks for drawing, world landmarks for bend angles \\ \hline
+\code{curls(points,\allowbreak{} side)} & 21 landmarks to \code{(\{servo: curl\},\allowbreak{} \{servo: bend degrees\})} \\ \hline
+\code{LEFT\_\allowbreak{}TRACKING}, \code{RIGHT\_\allowbreak{}TRACKING} & Per-servo \code{straight\_\allowbreak{}deg} and \code{curled\_\allowbreak{}deg}. Left: whole finger per servo. Right: base follows the knuckle, tip the two outer joints (\code{\_\allowbreak{}split()}). \\ \hline
+\code{CurlFilter} & One Euro filter per curl: removes jitter without much lag. Tuned by \code{MIN\_\allowbreak{}CUTOFF\_\allowbreak{}HZ} (0.5) and \code{BETA} (1.0). \\ \hline
+\code{follow()}, \code{step()}, \code{deadband()} & Rate-limit (\code{MAX\_\allowbreak{}CURL\_\allowbreak{}PER\_\allowbreak{}S} = 4) and ease the servo targets; ignore changes under \code{DEADBAND} (0.03) \\ \hline
+\code{hand\_\allowbreak{}axes()}, \code{wrist\_\allowbreak{}angles(points,\allowbreak{} neutral)} & Right-hand wrist deviation and flexion from the camera, against the neutral saved by \code{hand\_\allowbreak{}mimic.py -{}-{}calibrate} \\ \hline
+\code{apply\_\allowbreak{}ranges(saved)} & Loads measured straight/curled angles from \code{calibration.json} (\code{tracking} section) \\ \hline
+\end{longtable}}
+
+
+\section{Hardware modules (Hardware/)}
+
+\subsection{hand\_control.py: the Hand class}
+One object that drives the wrist and fingers safely. New scripts should use it rather than talk to the boards directly; it brings the calibration checks, the E-stop and the sim link with it.
+
+%%begin novalidate
+\begin{codeblock}
+from hand_control import Hand
+import finger_motion as fm
+with Hand(dry_run=False, wrist=True, fingers=fm.FINGERS, sim_ip=None) as hand:
+    hand.arm()                                  # Enter to arm, servos at home
+    hand.move(fingers=fm.PICK_GRIP, seconds=0.6)
+    hand.move(wrist=(25.0, 0.0))                # (deviation, flexion) deg
+    hand.play(schedule, speed=0.25)             # strum, fingers held
+# leaving the block parks and turns signals off
+\end{codeblock}
+%%end novalidate
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3098\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6902\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Method} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Method} & \textbf{What it does} \\ \hline
+\endhead
+\code{Hand(dry\_\allowbreak{}run,\allowbreak{} wrist,\allowbreak{} fingers,\allowbreak{} sim\_\allowbreak{}ip,\allowbreak{} sim\_\allowbreak{}port,\allowbreak{} realtime)} & Checks calibration and refuses to start if a servo it needs has no values (dry runs warn and skip those servos). Refuses if wrist and fingers share a board address and channel. Opens \code{ServoBus} and \code{PowerBox}. \\ \hline
+\code{arm()} & Waits for Enter, writes home pulses, then turns signals on \\ \hline
+\code{move(wrist,\allowbreak{} fingers,\allowbreak{} seconds)} & Eases to a new pose along a smoothstep, through the kinematics every tick \\ \hline
+\code{hold(seconds)} & Stays put while still checking the E-stop and refreshing the sim \\ \hline
+\code{play(schedule,\allowbreak{} speed,\allowbreak{} lead\_\allowbreak{}in)} & Plays a strum schedule with the fingers held. Returns scheduled vs commanded stroke times. \\ \hline
+\code{tick()} & Checks the E-stop, writes the current pose, waits one control period \\ \hline
+\code{pulses()} & What is being sent right now (calibrated servos only) \\ \hline
+\code{park()}, \code{close(park=\allowbreak{}True)} & Ease home; then signals off and PWM off. Always safe to call. \\ \hline
+\end{longtable}}
+
+Typed wrist commands are clamped to \code{WRIST\_\allowbreak{}DEV\_\allowbreak{}LIMITS} (-30, 30) and \code{WRIST\_\allowbreak{}FLEX\_\allowbreak{}LIMITS} (-25, 25).
+
+
+\subsection{servo\_output.py: song player, wrist table, ServoBus}
+Run it to play a song on the real hand (this is what \code{run.py song} runs). It also holds the shared hardware definitions.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3098\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6902\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endhead
+\code{WRIST\_\allowbreak{}SERVOS} & Defaults for \code{dev\_\allowbreak{}pos}, \code{dev\_\allowbreak{}neg}, \code{flex\_\allowbreak{}pos}, \code{flex\_\allowbreak{}neg}: board, channel, \code{neutral\_\allowbreak{}pulse}, \code{reel\_\allowbreak{}in\_\allowbreak{}sign}, \code{min\_\allowbreak{}pulse} (2500), \code{max\_\allowbreak{}pulse} (7300). Overwritten by \code{calibration.json}. \\ \hline
+\code{BOARDS} & \code{lv} = 0x41 (5 V board, becoming 6.4 V: wrist and left hand); \code{hv} = 0x40 (8.4 V board: right-hand fingers) \\ \hline
+\code{I2C\_\allowbreak{}BUS}, \code{PWM\_\allowbreak{}FREQUENCY}, \code{CONTROL\_\allowbreak{}HZ} & 7, 50 Hz, 50 Hz \\ \hline
+\code{PULSE\_\allowbreak{}PER\_\allowbreak{}SERVO\_\allowbreak{}DEG} & (8191 - 1638) / 180, about 36.4 counts per degree. Check on the bench (section 4.3). \\ \hline
+\code{PULSE\_\allowbreak{}ABS\_\allowbreak{}MIN}, \code{PULSE\_\allowbreak{}ABS\_\allowbreak{}MAX} & 1638 and 8191 (0.5 and 2.5 ms): last-resort clamp on every channel \\ \hline
+\code{EASE\_\allowbreak{}SECONDS} & 0.5 s to ease in at start and out at stop \\ \hline
+\code{ServoBus(dry\_\allowbreak{}run,\allowbreak{} boards)} & Both PCA9685 boards, or a stand-in for \code{-{}-{}dry-{}\allowbreak{}run}. \code{set(board,\allowbreak{} channel,\allowbreak{} pulse)}, \code{publish()} to the sim, \code{release()} to go limp. \\ \hline
+\code{servo\_\allowbreak{}pulse(name,\allowbreak{} spool\_\allowbreak{}deg)}, \code{wrist\_\allowbreak{}pulses(dev,\allowbreak{} flex)} & Spool angle to pulse, clamped to the servo's own limits; returns which servos hit a limit \\ \hline
+\code{write\_\allowbreak{}wrist()}, \code{ease\_\allowbreak{}wrist()}, \code{ease\_\allowbreak{}fingers()} & Low-level writes and eased moves \\ \hline
+\code{demand\_\allowbreak{}report(schedule,\allowbreak{} speed)} & Printed before anything moves: each servo's travel and peak speed, and a warning if a servo hits its limits or the MG995 rating \\ \hline
+\end{longtable}}
+
+Command-line options: \code{-{}-{}dry-{}\allowbreak{}run}, \code{-{}-{}speed} (0.25 for first runs), \code{-{}-{}wrist-{}\allowbreak{}only}, \code{-{}-{}sim-{}\allowbreak{}ip}, \code{-{}-{}sim-{}\allowbreak{}port}, \code{-{}-{}log} (per-tick CSV in \code{Testing/\allowbreak{}results/\allowbreak{}}), plus the song options from \code{strum\_\allowbreak{}motion.add\_\allowbreak{}song\_\allowbreak{}args()}.
+
+
+\subsection{wrist\_kinematics.py: tendon geometry}
+Each wrist axis is two servos pulling strings on opposite sides of a ball joint. The two sides don't change length by the same amount, so mirroring one servo onto the other would leave a string slack. This module calculates each string's real length from the geometry and turns the change into a spool angle.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3098\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6902\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Name} & \textbf{What it is} \\ \hline
+\endhead
+\code{ARM\_\allowbreak{}RADIUS\_\allowbreak{}MM}, \code{ARM\_\allowbreak{}DROP\_\allowbreak{}MM} & Where the strings tie on below the ball: 30 mm out, 0 mm drop (measured 2026-11-17) \\ \hline
+\code{ANCHOR\_\allowbreak{}RADIUS\_\allowbreak{}MM}, \code{ANCHOR\_\allowbreak{}DROP\_\allowbreak{}MM} & Where the strings leave the post: 16.51 mm out, 98.425 mm below the ball \\ \hline
+\code{SPOOL\_\allowbreak{}RADIUS\_\allowbreak{}MM} & 11.1125 mm (0.4375 in) \\ \hline
+\code{SERVO\_\allowbreak{}NAME}, \code{SERVO\_\allowbreak{}RATED\_\allowbreak{}DEG\_\allowbreak{}PER\_\allowbreak{}S} & MG995, 375 deg/s at 6 V no load \\ \hline
+\code{SERVO\_\allowbreak{}SIDES} & Which side each servo's tendon is on. Swap pairs with \code{calibrate\_\allowbreak{}servo.py -{}-{}swap}, not here. \\ \hline
+\code{tendon\_\allowbreak{}lengths(dev,\allowbreak{} flex)} & String length per servo, mm \\ \hline
+\code{servo\_\allowbreak{}angles(dev,\allowbreak{} flex)} & Spool angle per servo, + = reel in; all zero at (0, 0), where \code{neutral\_\allowbreak{}pulse} is measured \\ \hline
+\code{mirrored\_\allowbreak{}error\_\allowbreak{}mm(dev,\allowbreak{} flex)} & How wrong a plain mirror would be, per pair \\ \hline
+\code{profile(schedule,\allowbreak{} wrist\_\allowbreak{}at)} & Travel and peak speed per servo for a whole schedule \\ \hline
+\end{longtable}}
+
+Run \code{python3 Hardware/\allowbreak{}wrist\_\allowbreak{}kinematics.py} for a table of servo angles at sample poses. With the measured geometry a servo turns about 2.68 degrees per wrist degree (arm radius / spool radius).
+
+
+\subsection{fingers.py: finger servo table}
+\code{FINGER\_\allowbreak{}SERVOS} holds the defaults for the ten right-hand finger servos (board \code{hv}, channel, \code{open\_\allowbreak{}pulse}, \code{closed\_\allowbreak{}pulse}), overwritten by \code{calibration.json}.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3526\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6474\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Function} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Function} & \textbf{What it does} \\ \hline
+\endhead
+\code{servos\_\allowbreak{}for(fingers)} & \code{(\textquotedbl{}index\textquotedbl{},\allowbreak{})} to \code{index\_\allowbreak{}base}, \code{index\_\allowbreak{}tip}. Raises on an unknown finger name. \\ \hline
+\code{finger\_\allowbreak{}pulse(name,\allowbreak{} curl)}, \code{finger\_\allowbreak{}pulses(pose,\allowbreak{} fingers)} & Curl to pulse, linear between open and closed \\ \hline
+\code{write\_\allowbreak{}fingers(bus,\allowbreak{} pose,\allowbreak{} fingers)} & Write a pose to the board \\ \hline
+\code{is\_\allowbreak{}calibrated()}, \code{missing\_\allowbreak{}calibration()}, \code{channels()} & Setup checks \\ \hline
+\end{longtable}}
+
+
+\subsection{power\_box.py: safety layer}
+Every script that moves a servo goes through \code{PowerBox}. Servo power itself is switched in hardware (section 2.1); the Jetson only controls whether servo \textbf{signals} are on, and watches the E-stop. Don't change the pin settings for the REV 3 box.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2778\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7222\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Item} & \textbf{Detail} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Item} & \textbf{Detail} \\ \hline
+\endhead
+\code{PIN\_\allowbreak{}OE =\allowbreak{} 31} & OE of both PCA9685 boards. HIGH = all signals off. A pull-up holds it HIGH at boot or after a crash. \\ \hline
+\code{PIN\_\allowbreak{}ESTOP =\allowbreak{} 15} & E-stop sense. \code{ESTOP\_\allowbreak{}PRESSED\_\allowbreak{}LEVEL =\allowbreak{} \textquotedbl{}high\textquotedbl{}} (REV 3): HIGH = pressed or cable cut. Debounced over \code{DEBOUNCE\_\allowbreak{}S} (50 ms). \\ \hline
+\code{RELAY\_\allowbreak{}PINS\_\allowbreak{}WIRED =\allowbreak{} False} & Relay pins 7 and 11 are only for an alternative wiring, not the REV 3 box \\ \hline
+States & WAIT (signals off) to ARMED (after Enter) to SAFE (E-stop or shutdown). Never re-arms by itself. \\ \hline
+\code{PowerBox(dry\_\allowbreak{}run,\allowbreak{} on\_\allowbreak{}safe)} & \code{on\_\allowbreak{}safe} turns every PWM output off; called on SAFE and on exit \\ \hline
+\code{arm(write\_\allowbreak{}home)} & Runs \code{write\_\allowbreak{}home()} while OE is still HIGH, then drives OE LOW \\ \hline
+\code{check()}, \code{sleep(s)} & Call in every loop. Raises \code{EStop} once tripped or shut down (Ctrl-C, SIGTERM). \\ \hline
+\code{outputs\_\allowbreak{}off()}, \code{close()} & OE HIGH and PWM off. Safe to call more than once. \\ \hline
+\code{POWERBOX\_\allowbreak{}AUTO\_\allowbreak{}ARM} & Environment variable: arm after a countdown instead of Enter (no keyboard) \\ \hline
+\end{longtable}}
+
+
+\subsection{calibration.py and calibrate\_servo.py}
+\code{calibration.py} loads and saves \code{Hardware/\allowbreak{}calibration.json} (format in section 11.1). \code{apply(section,\allowbreak{} table)} overwrites the code's default tables with saved values; \code{save(section,\allowbreak{} name,\allowbreak{} values)} merges and writes; \code{hand\_\allowbreak{}back()} gives the file back to the user when written under sudo. Values are checked against 1638..8191 and the board names \code{lv}/\code{hv}.
+
+\code{calibrate\_\allowbreak{}servo.py} is the interactive bench tool. Its commands and the calibration procedure are in section 4.2.
+
+
+\subsection{hand\_console.py: type commands to the hand}
+Run with \code{python3 run.py console} or \code{servo Hardware/\allowbreak{}hand\_\allowbreak{}console.py}. Options: \code{-{}-{}dry-{}\allowbreak{}run}, \code{-{}-{}sim-{}\allowbreak{}ip}, \code{-{}-{}no-{}\allowbreak{}wrist}, \code{-{}-{}fingers index,\allowbreak{}thumb} (or \code{all}), \code{-{}-{}run \textquotedbl{}cmd; cmd\textquotedbl{}} (run commands and quit). The commands are in section 5.5.
+
+
+\subsection{pick\_up.py}
+\code{grip\_\allowbreak{}pick(hand)} forms \code{PICK\_\allowbreak{}READY}, asks you to lay the pick on the index finger, then closes to \code{PICK\_\allowbreak{}GRIP} over \code{CLOSE\_\allowbreak{}SECONDS} (0.6 s, slow so the thumb presses instead of knocking). \code{take\_\allowbreak{}from\_\allowbreak{}holder(hand)} uses \code{HOLDER\_\allowbreak{}WRIST} and \code{LIFT\_\allowbreak{}WRIST}, which stay placeholders now that the holder has been cut. \code{release\_\allowbreak{}pick(hand)} opens. Options: \code{-{}-{}dry-{}\allowbreak{}run}, \code{-{}-{}sim-{}\allowbreak{}ip}, \code{-{}-{}holder}, \code{-{}-{}hold S} (default 5).
+
+
+\subsection{hand\_mimic.py: camera mimic, both hands}
+Shows a camera, reads whether the hand in view is left or right, and drives the matching robot hand; the other eases open. \code{HandPicker} only swaps after the other hand has been seen for \code{SWITCH\_\allowbreak{}HOLD\_\allowbreak{}S} (0.5 s). Camera reading runs in its own thread (\code{CameraThread}).
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Option} & \textbf{Effect} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Option} & \textbf{Effect} \\ \hline
+\endhead
+\code{-{}-{}dry-{}\allowbreak{}run}, \code{-{}-{}show}, \code{-{}-{}camera N} & No hardware; preview window; camera number \\ \hline
+\code{-{}-{}hand auto\textbar{}left\textbar{}right\textbar{}both} & \code{auto} = whichever hand is seen; \code{both} = each robot hand follows its own hand \\ \hline
+\code{-{}-{}wrist} & Also drive the robot wrist from the right hand's tilt \\ \hline
+\code{-{}-{}swap-{}\allowbreak{}hands} & Flip left/right if the camera mislabels \\ \hline
+\code{-{}-{}calibrate} & Record your hand open and in a fist (nothing moves), save the ranges and wrist neutral, then quit \\ \hline
+\code{-{}-{}sim-{}\allowbreak{}ip}, \code{-{}-{}sim-{}\allowbreak{}port} & Stream both hands to the sim \\ \hline
+\end{longtable}}
+
+
+\subsection{left\_hand.py}
+Last year's \code{Imitation/\allowbreak{}mimic.py}, moved onto the box and the safety layer. \code{LEFT\_\allowbreak{}SERVOS} puts \code{left\_\allowbreak{}index}..\code{left\_\allowbreak{}pinky} on \code{lv} channels 1-4 with last year's pulses (1638 open, 7000 closed). \code{problems()} refuses on missing values or shared channels. Options: \code{-{}-{}dry-{}\allowbreak{}run}, \code{-{}-{}show}, \code{-{}-{}camera}.
+
+
+\subsection{Small helpers and test scripts}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{File} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{File} & \textbf{What it does} \\ \hline
+\endhead
+\code{i2c\_\allowbreak{}bus.py} & \code{open\_\allowbreak{}bus(bus\_\allowbreak{}id,\allowbreak{} frequency)}: open I2C bus 7 with whichever library is installed \\ \hline
+\code{run\_\allowbreak{}log.py} & \code{RunLog}: record each control tick and save a CSV (section 11.3) \\ \hline
+\code{test\_\allowbreak{}one\_\allowbreak{}servo.py CH [hv\textbar{}lv]} & Wiggle one channel through the safety layer. No calibration needed. Board defaults to \code{hv}. \\ \hline
+\code{test\_\allowbreak{}one\_\allowbreak{}servo\_\allowbreak{}armed.py CH [ADDR]} & Same check, older form. Its top comment labels the boards the old way round. \\ \hline
+\code{relay\_\allowbreak{}polarity\_\allowbreak{}test.py} & Only for the alternative relay wiring. Not used with REV 3. \\ \hline
+\code{hand\_\allowbreak{}link.py} & Learned-strum bridge: \code{HardwareSink} drives the wrist directly, \code{UdpSink} sends to \code{hand\_\allowbreak{}link.py -{}-{}listen} on the Jetson (parks if packets stop) \\ \hline
+\end{longtable}}
+
+
+\section{Simulation (Sim/)}
+
+\subsection{mvmnt\_demo.py}
+The PyBullet scene with both MPL hands and a guitar. Loads \code{Sim/\allowbreak{}MPL/\allowbreak{}right\_\allowbreak{}hand.xml} (the only MPL model with a full thumb and 3-axis wrist) and its mirror, \code{left\_\allowbreak{}hand.xml}.
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Option} & \textbf{Effect} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Option} & \textbf{Effect} \\ \hline
+\endhead
+(none) & Plays the song from \code{strum\_\allowbreak{}motion.py} by itself, and reports string contacts \\ \hline
+\code{-{}-{}follow}, \code{-{}-{}port}, \code{-{}-{}delay S} & Show live commands from the hand scripts; hold each pose back S seconds \\ \hline
+\code{-{}-{}mimic}, \code{-{}-{}camera}, \code{-{}-{}show}, \code{-{}-{}swap-{}\allowbreak{}hands} & Both sim hands follow hands on the webcam. Fingers only: the wrist stays straight. \\ \hline
+Song options & \code{-{}-{}song -{}-{}track -{}-{}bpm -{}-{}pattern -{}-{}repeats -{}-{}directions} \\ \hline
+\end{longtable}}
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Constant} & \textbf{Meaning} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Constant} & \textbf{Meaning} \\ \hline
+\endhead
+\code{CALIBRATE} & \textbf{Currently \code{True}.} Opens placement sliders instead of playing. Set to \code{False} to watch the strum on its own. \code{-{}-{}follow} isn't affected. \\ \hline
+\code{HAND\_\allowbreak{}ANCHOR\_\allowbreak{}POS}, \code{HAND\_\allowbreak{}ANCHOR\_\allowbreak{}EULER\_\allowbreak{}DEG}, \code{GUITAR\_\allowbreak{}POS} & Calibrated right-hand and guitar placement \\ \hline
+\code{LEFT\_\allowbreak{}ANCHOR\_\allowbreak{}POS}, \code{LEFT\_\allowbreak{}ANCHOR\_\allowbreak{}EULER\_\allowbreak{}DEG} & Left-hand placement (first guess) \\ \hline
+\code{DT} & 1/240 s physics step \\ \hline
+\end{longtable}}
+
+The sim shows commands, not measured motion: the servos don't report position, and the MPL hand is a generic model, not the team's design.
+
+
+\subsection{Other sim files}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{File} & \textbf{What it does} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{File} & \textbf{What it does} \\ \hline
+\endhead
+\code{hand.py} & Manual joint sliders for the sim hand \\ \hline
+\code{play\_\allowbreak{}learned\_\allowbreak{}strum.py}, \code{play\_\allowbreak{}learned\_\allowbreak{}strum\_\allowbreak{}hw.py} & Play a wrist trajectory learned from video (\code{.npz} from \code{Learning/\allowbreak{}train\_\allowbreak{}strum\_\allowbreak{}from\_\allowbreak{}video.py}); the \code{\_\allowbreak{}hw} version can also drive the real wrist (\code{-{}-{}hardware}). Teammates' work, in progress. \\ \hline
+\code{MPL/\allowbreak{}make\_\allowbreak{}left\_\allowbreak{}hand.py} & Rebuilds \code{left\_\allowbreak{}hand.xml} from \code{right\_\allowbreak{}hand.xml} \\ \hline
+\end{longtable}}
+
+
+\section{Data formats}
+
+\subsection{Hardware/calibration.json}
+Bench values saved by the tools. It lives only on the Jetson, git ignores it, and it overrides the defaults in the code. Back it up. Sections:
+
+%%begin novalidate
+\begin{codeblock}
+{
+  "wrist":   { "dev_pos": {"board": "lv", "channel": 10, "neutral_pulse": 5200,
+                           "reel_in_sign": 1, "min_pulse": ..., "max_pulse": ...}, ... },
+  "fingers": { "index_tip": {"board": "hv", "channel": 2,
+                             "open_pulse": 8100, "closed_pulse": 1700}, ... },
+  "left":    { "left_index": {"channel": 1, "open_pulse": 1638, "closed_pulse": 7000} },
+  "poses":   { "pick_grip": {"thumb_base": 0.7, ...} },
+  "tracking":{ "right": {"index_tip": {"straight_deg": ..., "curled_deg": ...},
+                         "wrist_neutral": ...}, "left": {...} }
+}
+\end{codeblock}
+%%end novalidate
+Only keys you save are stored; anything missing falls back to the table in the code. The code's own tables have no finger channels, so a Jetson without this file can't move the fingers.
+
+\code{Hardware/\allowbreak{}calibration.example.json} is a committed copy of the values above, so they're kept in the repo. A new Jetson starts by copying it to \code{calibration.json} (section 3.1). After calibrating, copy the Jetson's file back over the example and commit it (section 3.2).
+
+
+\subsubsection*{Channel map in the file today}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2350\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.1496\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6154\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Board} & \textbf{Channel} & \textbf{Servo} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Board} & \textbf{Channel} & \textbf{Servo} \\ \hline
+\endhead
+hv (0x40, 8.4 V) & 0, 1 & \code{thumb\_\allowbreak{}base}, \code{thumb\_\allowbreak{}tip} \\ \hline
+hv & 3, 2 & \code{index\_\allowbreak{}base}, \code{index\_\allowbreak{}tip} \\ \hline
+hv & 4, 5 & \code{middle\_\allowbreak{}base}, \code{middle\_\allowbreak{}tip} \\ \hline
+hv & 6, 7 & \code{ring\_\allowbreak{}base}, \code{ring\_\allowbreak{}tip} \\ \hline
+hv & 8, 9 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
+lv (0x41) & 1-4 & \code{left\_\allowbreak{}index}, \code{left\_\allowbreak{}middle}, \code{left\_\allowbreak{}ring}, \code{left\_\allowbreak{}pinky} \\ \hline
+lv & 10, 11 & \code{dev\_\allowbreak{}pos} (pinky side), \code{dev\_\allowbreak{}neg} (thumb side) \\ \hline
+lv & 12, 13 & \code{flex\_\allowbreak{}pos} (North, back of hand), \code{flex\_\allowbreak{}neg} (South, palm) \\ \hline
+\end{longtable}}
+
+Note: every right-hand finger currently has 1700/8100 as its pulses (thumb reversed), and the wrist has neutral pulses but no saved signs, min or max. Treat these as starting values until each servo is calibrated on the assembled hand (section 4).
+
+
+\subsection{UDP pose packet}
+JSON, one packet per control tick, to port 5005:
+
+%%begin novalidate
+\begin{codeblock}
+{"run": <id>, "seq": 42, "dev": 12.5, "flex": 0.0,
+ "f": [10 right-hand curls in SERVO_NAMES order],
+ "l": [4 left-hand curls in LEFT_SERVO_NAMES order]}
+\end{codeblock}
+%%end novalidate
+\code{f} and \code{l} are optional. \code{run} lets the sim tell a new run from a restarted one; \code{seq} drops late packets.
+
+
+\subsection{Run log CSV}
+Written by \code{servo\_\allowbreak{}output.py -{}-{}log} as \code{Testing/\allowbreak{}results/\allowbreak{}run\_\allowbreak{}<label>\_\allowbreak{}<date-{}\allowbreak{}time>.csv}. Columns: \code{wall\_\allowbreak{}s}, \code{song\_\allowbreak{}s}, \code{stroke}, \code{direction}, \code{dev\_\allowbreak{}deg}, \code{flex\_\allowbreak{}deg}, one \code{<servo>\_\allowbreak{}pulse} per servo, \code{late\_\allowbreak{}ms} (how late that tick started).
+
+
+\subsection{Test CSVs}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.1496\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.8504\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Columns} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Test} & \textbf{Columns} \\ \hline
+\endhead
+finger & \code{time}, \code{servo}, \code{spacing\_\allowbreak{}in}, \code{target\_\allowbreak{}in}, \code{commanded\_\allowbreak{}curl}, \code{attempt}, \code{measured\_\allowbreak{}in}, \code{error\_\allowbreak{}in}, \code{within\_\allowbreak{}tolerance}, \code{note} \\ \hline
+strum & \code{time}, \code{cycle}, \code{bpm}, \code{pattern}, \code{strokes}, \code{target\_\allowbreak{}s}, \code{commanded\_\allowbreak{}s}, \code{time\_\allowbreak{}error\_\allowbreak{}pct}, \code{worst\_\allowbreak{}lateness\_\allowbreak{}ms}, \code{result}, \code{note} \\ \hline
+tempo & \code{time}, \code{bpm}, \code{cycle}, \code{stroke}, \code{direction}, \code{target\_\allowbreak{}interval\_\allowbreak{}s}, \code{scheduled\_\allowbreak{}s}, \code{commanded\_\allowbreak{}s}, \code{contact\_\allowbreak{}frame}, \code{result}, \code{note} \\ \hline
+\end{longtable}}
+
+
+\subsection{Pulse units}
+Pulses are PCA9685 \code{duty\_\allowbreak{}cycle} counts at 50 Hz: one count is 20000/65535 \textmu{}s, so 1638 to 8191 is 0.5 to 2.5 ms. Every channel is clamped to that range on top of its own limits.
+
+
+\section{Changing the code}
+
+\subsection{Where to make common changes}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3205\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6795\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{To change} & \textbf{Edit} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{To change} & \textbf{Edit} \\ \hline
+\endhead
+Strum speed, sweep angles, lift & Constants under \code{\# motion} in \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py} \\ \hline
+Default song or tempo & \code{SONG\_\allowbreak{}FILE}, \code{SONG\_\allowbreak{}TRACK}, \code{BPM} in \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py}, or \code{-{}-{}song} / \code{-{}-{}bpm} \\ \hline
+A finger pose & Tune in \code{hand\_\allowbreak{}console.py} and \code{save NAME}; defaults in \code{Sim/\allowbreak{}finger\_\allowbreak{}motion.py} \\ \hline
+Servo channels or pulses & \code{calibrate\_\allowbreak{}servo.py} (writes \code{calibration.json}), not the tables in the code \\ \hline
+Wrist geometry & Constants at the top of \code{Hardware/\allowbreak{}wrist\_\allowbreak{}kinematics.py} \\ \hline
+Camera mimic ranges and smoothing & \code{hand\_\allowbreak{}mimic.py -{}-{}calibrate}; \code{BETA}, \code{MIN\_\allowbreak{}CUTOFF\_\allowbreak{}HZ} in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py} \\ \hline
+Sim placement & Set \code{CALIBRATE =\allowbreak{} True} in \code{Sim/\allowbreak{}mvmnt\_\allowbreak{}demo.py}, drag the sliders, paste the printed values \\ \hline
+Safety pins (\code{power\_\allowbreak{}box.py}) & Nothing: they match the REV 3 box \\ \hline
+\end{longtable}}
+
+
+\subsection{Rules}
+\begin{itemize}
+  \item Shared motion logic goes in \code{Sim/\allowbreak{}strum\_\allowbreak{}motion.py} or \code{Sim/\allowbreak{}finger\_\allowbreak{}motion.py}, with no PyBullet or hardware imports.
+  \item New hardware scripts use \code{Hand} from \code{hand\_\allowbreak{}control.py}, so they get the safety rules.
+  \item Every script supports \code{-{}-{}dry-{}\allowbreak{}run} and \code{-{}-{}sim-{}\allowbreak{}ip}. Dry-run before running on the box.
+  \item Measured values go in \code{calibration.json} through the tools. The tables in the code are defaults.
+  \item Comments stay short, as plain \code{\#} lines above functions.
+  \item Don't run the old scripts that write straight to 0x40 (\code{Imitation/\allowbreak{}mimic.py}, \code{Imitation/\allowbreak{}servozero.py}, \code{Testing/\allowbreak{}servotest.py}, \code{Testing/\allowbreak{}servozero.py}): on this box 0x40 is the finger board and they skip the safety layer.
+\end{itemize}
+
+
+\subsection{Running}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.2778\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.7222\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Where} & \textbf{How} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Where} & \textbf{How} \\ \hline
+\endhead
+Laptop & \code{python run.py song -{}-{}dry-{}\allowbreak{}run} in the \code{bioguitar} conda environment (section 3.5) \\ \hline
+Jetson, through \code{run.py} & \code{python3 run.py ...} without sudo \\ \hline
+Jetson, a script on its own & \code{servo Hardware/\allowbreak{}<script>.py} (the \code{servo} shortcut: sudo plus your user's packages and display, section 3.3) \\ \hline
+Moving code to the Jetson & Direct Ethernet: \code{git push jetson main}; otherwise a git bundle (section 3.2) \\ \hline
+\end{longtable}}
+
+
+\section{Code from earlier teams}
+Kept for reference. Only two pieces are used by the current code: \code{Parsing/\allowbreak{}GuitarProReader.py} (note times for \code{strum\_\allowbreak{}motion.py}) and \code{MediaPipe/\allowbreak{}hand\_\allowbreak{}landmarker.task} (the hand model for every camera script).
+
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3846\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6154\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Path} & \textbf{What it is} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Path} & \textbf{What it is} \\ \hline
+\endhead
+\code{Parsing/\allowbreak{}} & Guitar Pro reading (used), fingering solver and MusicXML experiments (not used). Songs in \code{Parsing/\allowbreak{}inputs/\allowbreak{}}. \\ \hline
+\code{Learning/\allowbreak{}main.py}, \code{Learning/\allowbreak{}weights/\allowbreak{}} & Spring 2026 fretting-hand network (scikit-learn MLP) \\ \hline
+\code{Learning/\allowbreak{}train\_\allowbreak{}strum\_\allowbreak{}from\_\allowbreak{}video.py} & Teammates' learned-strum work, in progress \\ \hline
+\code{Imitation/\allowbreak{}} & Spring 2026 left-hand mimic, replaced by \code{Hardware/\allowbreak{}left\_\allowbreak{}hand.py} \\ \hline
+\code{MediaPipe/\allowbreak{}tracking.py} & Records landmarks to CSV \\ \hline
+\code{cadenCV\_\allowbreak{}Fall2024/\allowbreak{}} & Sheet music image to MIDI (Fall 2024) \\ \hline
+\end{longtable}}
+
+
+\section{Troubleshooting}
+
+\subsection{Box and power}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3419\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6581\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{What you see} & \textbf{Check} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{What you see} & \textbf{Check} \\ \hline
+\endhead
+RESET does nothing (SERVO LED stays off) & MAIN on? E-stop twisted out? F3 (1 A) blown? TH1 open because K1 got hot (wait for it to cool)? Then the RESET wiring from +5 V hub B to point A. \\ \hline
+SERVO LED on while RESET is held, off when you let go & The seal-in isn't holding: diode D1 (stripe toward point A), the wire from K1 NO to D1, or point A. \\ \hline
+Script prints SAFE: E-stop is pressed, with the E-stop released & Pin 15 wiring: NC2 to pins 15 and 14, the 10 k\textohm{} pull-up from pin 15 to pin 17, and the 4-core E-stop cable. If it happens right after starting, the E-stop cable may be unplugged. \\ \hline
+Script arms but no servo moves & SERVO LED on? Board V+ screw terminal has voltage? Pin 31 reads \textasciitilde{}0 V while armed (OE)? Servo on the channel and board you typed, brown wire on the GND row? \\ \hline
+Servo powered and getting a signal but not moving & Is it tied to a tight string? Unhook the horn and test it free. Is it on the right board for its voltage (fingers on \code{hv}, wrist and left hand on \code{lv})? \\ \hline
+Finger board (\code{hv}) V+ reads nothing or 5 V & 8.4 V adapter plugged in? Wire from K2 NO to the \code{hv} board's V+? No V+ wire in the chain cable? \\ \hline
+\code{i2cdetect} doesn't show 40 and 41 & VCC/SDA/SCL/GND wires to pins 1/3/5/9 and along the chain cable. A board missing = its logic wiring. The boards' VCC needs the Jetson to be on. \\ \hline
+F1 (10 A) blows & A short on the 5 V side. Find it before replacing the fuse. \\ \hline
+\end{longtable}}
+
+
+\subsection{Jetson, scripts and moving code}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3419\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6581\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{Problem} & \textbf{Fix} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{Problem} & \textbf{Fix} \\ \hline
+\endhead
+\code{ModuleNotFoundError} (adafruit, board, cv2...) & Use the \code{servo} shortcut or \code{run.py}, not plain \code{sudo python3}: your packages are installed for your user, and sudo doesn't see them. If it still fails with the shortcut, the package is missing: copy it over. \\ \hline
+Pressing Enter does nothing & You're in VS Code's output panel. Run it in a terminal, or use \code{POWERBOX\_\allowbreak{}AUTO\_\allowbreak{}ARM}. \\ \hline
+Script refuses: missing channel / neutral pulse & Calibrate the servos it lists (section 4). \code{calibrate\_\allowbreak{}servo.py -{}-{}show} lists everything missing. \\ \hline
+Script refuses: servos share a channel & Two servos have the same board and channel in \code{calibration.json}. Move one with \code{calibrate\_\allowbreak{}servo.py NAME CHANNEL}. \\ \hline
+Script prints its help text and quits & Wrong arguments. For example \code{test\_\allowbreak{}one\_\allowbreak{}servo.py} takes \code{<channel> <hv\textbar{}lv\textbar{}0x40\textbar{}0x41>}. \\ \hline
+``A different mode has already been set!'' & Old code. Pull the latest (\code{power\_\allowbreak{}box.py} handles the GPIO numbering mode now). \\ \hline
+\code{-{}-{}show} window doesn't open under sudo & Re-create the \code{servo} shortcut with the \code{DISPLAY} / \code{XAUTHORITY} part (section 3.3), or use \code{run.py}. \\ \hline
+\code{ping 192.168.10.2} fails & Link lights on both ports? \code{ip -{}4 addr} on the Jetson should show \code{192.168.10.2}. On the laptop, the static address must be on the adapter the cable is plugged into. \\ \hline
+Ping works but \code{ssh} doesn't & On the Jetson: \code{sudo systemctl enable -{}-{}now ssh}. \\ \hline
+\code{ssh}: REMOTE HOST IDENTIFICATION HAS CHANGED & The address used to belong to another device. On the laptop: \code{ssh-{}\allowbreak{}keygen -{}R 192.168.10.2}, then connect again. \\ \hline
+\code{git push jetson} refused: branch is currently checked out & On the Jetson, in the repo: \code{git config receive.denyCurrentBranch updateInstead} (section 3.1). \\ \hline
+\code{git push jetson} refused: working directory has unstaged changes & Someone edited files on the Jetson. Run \code{git stash} there, then push again. \\ \hline
+\code{git pull} fails: local changes & \code{git stash}, then pull again. \\ \hline
+\code{git pull} fails: not a bundle / bad path & Check the USB stick's mount path with \code{ls /\allowbreak{}media/\allowbreak{}\$USER}. \\ \hline
+Changes on the laptop don't appear on the Jetson & You didn't commit before pushing or bundling, or pulled an old bundle. \code{git log -{}-{}oneline -{}1} on both should match. \\ \hline
+Sim shows nothing while the hand runs & Allow UDP port 5005 through the laptop's firewall; check the \code{-{}-{}sim-{}\allowbreak{}ip} address. \\ \hline
+\end{longtable}}
+
+
+\subsection{Calibration}
+{\small
+\begin{longtable}{|>{\raggedright\arraybackslash}p{\dimexpr 0.3419\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|>{\raggedright\arraybackslash}p{\dimexpr 0.6581\linewidth-2\tabcolsep-1.6\arrayrulewidth\relax}|}
+\hline
+\rowcolor{tblhead}\textbf{What you see} & \textbf{Likely cause and fix} \\ \hline
+\endfirsthead
+\hline
+\rowcolor{tblhead}\textbf{What you see} & \textbf{Likely cause and fix} \\ \hline
+\endhead
+\code{-{}-{}wrist} says to calibrate servos first & It needs a neutral pulse for all four wrist servos. Do the single-servo steps first (section 4.3). \\ \hline
+The servo hums but doesn't move & The string is too tight for the move. Slacken it, or nudge in smaller steps. \\ \hline
+Nothing moves at all & Is the SERVO LED on? Is the servo on the channel and board you typed, brown wire on the GND row? See section 14.1. \\ \hline
+An axis moves backwards in \code{-{}-{}wrist} & \code{calibrate\_\allowbreak{}servo.py -{}-{}swap dev} (or \code{flex}), then check again. \\ \hline
+A line ends in \code{<-{}-{} at its limit} & That servo hit its \code{min} or \code{max}. Re-check the limits, or the geometry if strings go slack. \\ \hline
+The servo gets hot & It's stalled against a stop or a tight string. Quit (\code{q}), back off the limit, re-check \code{closed} / \code{min} / \code{max}. \\ \hline
+``out of the safe range'' & The tool only accepts 1638 to 8191. \\ \hline
+\end{longtable}}
+
+
+\end{document}
