@@ -56,6 +56,12 @@ FOLLOW_TAU_S = 0.08    # servos ease toward the latest camera reading with this 
 DEADBAND = 0.03        # a reading that moves less than this is camera noise and is ignored
 MIN_SPAN_DEG = 10.0    # a measured straight-to-curled range smaller than this is rejected
 
+# Wrist from the camera: how far the right hand is tilted from the neutral pose saved by --calibrate.
+WRIST_DEV_SIGN = 1.0       # flip to -1.0 if tilting your hand toward the pinky moves the robot toward the thumb
+WRIST_FLEX_SIGN = 1.0      # flip to -1.0 if bending your hand back moves the robot toward the palm
+WRIST_SCALE_DEG = 45.0     # degrees treated as one unit by the curl filter and deadband
+WRIST_MAX_DEG_PER_S = 120.0
+
 # Smoothing (a One Euro filter on each curl). Lower MIN_CUTOFF_HZ = steadier when
 # the hand is still; higher BETA = less lag when it moves fast.
 MIN_CUTOFF_HZ = 0.5
@@ -94,9 +100,9 @@ def step(pose, target, limit):
 
 # Like step(), but eases in: covers most of the gap quickly and slows near the target,
 # so updates arriving at the camera's frame rate turn into smooth motion.
-def follow(pose, target, dt):
+def follow(pose, target, dt, max_rate=MAX_CURL_PER_S):
     k = 1.0 - math.exp(-dt / FOLLOW_TAU_S)
-    limit = MAX_CURL_PER_S * dt
+    limit = max_rate * dt
     return {n: v + max(-limit, min(limit, (target.get(n, v) - v) * k)) for n, v in pose.items()}
 
 
@@ -122,6 +128,52 @@ def apply_ranges(saved):
                 table[name]["straight_deg"], table[name]["curled_deg"] = float(a), float(b)
                 changed.append(name)
     return changed
+
+
+def _vec(p):
+    return (p.x, p.y, p.z)
+
+
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _unit(a):
+    n = math.sqrt(_dot(a, a))
+    return None if n == 0 else (a[0] / n, a[1] / n, a[2] / n)
+
+
+# (up, across) unit vectors: wrist to middle knuckle, and index knuckle to pinky knuckle. None if unclear.
+def hand_axes(points):
+    up = _unit(_sub(_vec(points[9]), _vec(points[0])))
+    across = _unit(_sub(_vec(points[17]), _vec(points[5])))
+    return None if up is None or across is None else (up, across)
+
+
+# (deviation, flexion) in degrees for a RIGHT hand, measured from neutral = (up, across) saved by --calibrate.
+# +deviation = tilted toward the pinky, +flexion = bent toward the back of the hand. None if unclear.
+def wrist_angles(points, neutral):
+    axes = hand_axes(points)
+    up0 = _unit(tuple(neutral[0]))
+    if axes is None or up0 is None:
+        return None
+    a = tuple(neutral[1])
+    across0 = _unit(_sub(a, tuple(x * _dot(a, up0) for x in up0)))
+    if across0 is None:
+        return None
+    back0 = _cross(across0, up0)
+    up = axes[0]
+    dev = math.degrees(math.atan2(_dot(up, across0), _dot(up, up0)))
+    flex = math.degrees(math.atan2(_dot(up, back0), _dot(up, up0)))
+    return WRIST_DEV_SIGN * dev, WRIST_FLEX_SIGN * flex
 
 
 def _alpha(dt, cutoff_hz):
