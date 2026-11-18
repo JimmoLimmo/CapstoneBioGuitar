@@ -57,7 +57,7 @@ DEADBAND = 0.03        # a reading that moves less than this is camera noise and
 MIN_SPAN_DEG = 10.0    # a measured straight-to-curled range smaller than this is rejected
 
 # Wrist from the camera: how far the right hand is tilted from the neutral pose saved by --calibrate.
-WRIST_DEV_SIGN = 1.0       # flip to -1.0 if tilting your hand toward the pinky moves the robot toward the thumb
+WRIST_DEV_SIGN = -1.0      # -1.0: the camera sees the hand mirrored; flip back to 1.0 if tilting toward the pinky moves the robot toward the thumb
 WRIST_FLEX_SIGN = 1.0      # flip to -1.0 if bending your hand back moves the robot toward the palm
 WRIST_SCALE_DEG = 45.0     # degrees treated as one unit by the curl filter and deadband
 WRIST_MAX_DEG_PER_S = 120.0

@@ -335,6 +335,9 @@ def main():
     camera = ht.Camera(args.camera, hands=2 if both else 1, swap=args.swap_hands)
     if args.show and not camera.preview_works():
         print("[mimic] can't open a preview window here; carrying on without it.")
+        if not os.environ.get("DISPLAY"):
+            print("[mimic]   no display: run it on the Jetson's desktop, through run.py or the servo shortcut "
+                  "(both pass the display through sudo).")
         args.show = False
 
     tables = {"left": lh.LEFT_SERVOS, "right": fh.FINGER_SERVOS}

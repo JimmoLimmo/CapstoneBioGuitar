@@ -2,9 +2,9 @@ opencv-python
 mediapipe
 numpy
 adafruit-circuitpython-pca9685
-adafruit-extended-bus
-pybullet
-guitarpro
+adafruit-extended-bus; sys_platform == "linux"
+pybullet; sys_platform == "linux"
+PyGuitarPro
 pandas
 scikit-learn
 joblib

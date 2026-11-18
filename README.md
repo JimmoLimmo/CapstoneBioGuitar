@@ -1,6 +1,6 @@
 # Bio-Inspired Guitarist
 
-Start here if you're new to the project or reviewing it. This guide covers what the code does, how the pieces connect, how to run it, and what is still unfinished. Step-by-step bench procedures (calibrating servos, wiring checks, finger tuning) are in section 8.
+This README covers what the code does, its architecture, how to run it, and what is still unfinished. Step-by-step bench procedures (calibrating servos, wiring checks, finger tuning) are in section 8.
 
 Last updated: November 2026 (Fall 2026 team).
 
@@ -9,24 +9,24 @@ Last updated: November 2026 (Fall 2026 team).
 We're building a prosthetic-style robot hand that plays guitar. There are two hands:
 
 - **Right hand (strumming), this semester's focus.** It has a ball-and-socket "marionette" wrist pulled by four MG995 servos, and five fingers with two HPS-0618SG servos each. The fingers hold a pick and the wrist sweeps it across the strings in time with a song.
-- **Left hand (fretting), from Spring 2026.** It has five servos, one per finger. Right now it only mimics a hand seen by a camera, in free air. It doesn't fret and doesn't run at the same time as the right hand.
+- **Left hand (fretting), from Spring 2026.** It has five servos, one per finger. Right now it only mimics a hand seen by a camera, in free air. It doesn't fret and doesn't run at the same time as the right hand. The thumb is currently
 
 Our main goal is a right hand that grips a pick and strums down and up strokes on time. Stretch goals are camera mimic and learning a strum from video.
 
-Everything runs on a Jetson Orin Nano inside the right-hand electrical box. A PyBullet simulation on a laptop can show the same commands live while the real hand runs.
+Everything runs on a Jetson Orin Nano inside the electrical box. A PyBullet simulation on a laptop can show the same commands live while the real hand runs.
 
 ## 2. Status at a glance
 
 | Area | State |
 | --- | --- |
 | Strum timing (song or pattern to wrist angles) | Working, tested in dry runs and the sim |
-| Wrist kinematics (wrist angles to 4 servo angles) | Working, but the geometry numbers are placeholders |
+| Wrist kinematics (wrist angles to 4 servo angles) | Working, with geometry measured from the built wrist (2026-11-17) |
 | Safety layer (E-stop, OE pin, arming) | Working on the box |
-| Wrist calibration | Channels assigned (lv board, ch 10-13); neutral pulses not measured yet |
-| Finger calibration | No channels or pulses filled in yet |
+| Wrist calibration | Channels (lv board, ch 10-13) and neutral pulses saved; signs and limits not saved yet |
+| Finger calibration | Channels assigned (hv board, ch 0-9); pulses are 1700 / 8100 starting values, not measured yet |
 | Pick grip poses | Starting guesses, to be tuned on the real hand |
 | Live sim alongside the hand | Working (UDP) |
-| Camera mimic (left and right) | Working in dry run; left hand has last year's pulses, right hand is uncalibrated |
+| Camera mimic (left and right) | Working in dry run; left hand has last year's pulses, right-hand fingers have starting pulses only |
 | CDR test runner | Working; dry-run results in `Testing/results/dry_run/` |
 | Learning a strum from video | In progress (Caeden) |
 
@@ -122,7 +122,7 @@ The fingers work the same way but simpler: a pose from `finger_motion.py` is a c
 
 ### Why there's a kinematics step
 
-Each wrist axis is two servos pulling strings on opposite sides of a ball joint. Mirroring one servo's pulse onto the other leaves a string slack or over-tight, because the two sides don't change length by the same amount. `wrist_kinematics.py` calculates each string's real length instead. Moving one axis also changes the other pair's string lengths. With the placeholder geometry, a plain mirror would leave about 2.3 mm of slack at the +25 deg strum extreme, and the wrist would rattle at the end of every stroke. Because the geometry is handled in code, each servo only needs its neutral pulse and its direction. Run `python Hardware/wrist_kinematics.py` for a table.
+Each wrist axis is two servos pulling strings on opposite sides of a ball joint. Mirroring one servo's pulse onto the other leaves a string slack or over-tight, because the two sides don't change length by the same amount. `wrist_kinematics.py` calculates each string's real length instead. Moving one axis also changes the other pair's string lengths. With the measured geometry, a plain mirror would leave about 0.7 mm of slack at the +25 deg strum extreme, and the wrist would rattle at the end of every stroke. Because the geometry is handled in code, each servo only needs its neutral pulse and its direction. Run `python Hardware/wrist_kinematics.py` for a table.
 
 ## 5. Hardware the code expects
 
@@ -132,7 +132,7 @@ Each wrist axis is two servos pulling strings on opposite sides of a ball joint.
 | --- | --- |
 | I2C | Bus 7 (Jetson header pins 3 and 5). Check with `sudo i2cdetect -y -r 7`. |
 | `hv` board, 0x40 | 8.4 V PCA9685: right-hand finger servos only |
-| `lv` board, 0x41 | 5 V PCA9685 (changing to 6.4 V): wrist on ch 10-13, left hand on ch 0-4 |
+| `lv` board, 0x41 | 5 V PCA9685 (changing to 6.4 V): wrist on ch 10-13, left hand on ch 1-4 |
 | Pin 31 | OE on both boards. HIGH means every servo signal is off. A pull-up holds it HIGH at boot or after a crash. |
 | Pin 15 | E-stop sense. HIGH means pressed or cable cut. |
 | Servo power | Switched in hardware only. RESET turns it on; E-stop, thermal switch, fuse or MAIN turn it off. The Jetson doesn't control the relays. |
@@ -148,11 +148,21 @@ Note: the REV 3 wiring sheets show the two board addresses the other way round. 
 | `dev_pos` | Pinky side | lv 10 |
 | `dev_neg` | Thumb side | lv 11 |
 
-`calibrate_servo.py --wrist` confirms the directions. If a pair turns out backwards, swap its two channel numbers.
+`calibrate_servo.py --wrist` confirms the directions. If a pair turns out backwards, `python3 Hardware/calibrate_servo.py --swap dev` (or `--swap flex`) swaps the pair's saved entries.
 
 ### Finger servos
 
-There are ten names, `<finger>_base` and `<finger>_tip`, for thumb, index, middle, ring and pinky, all on the `hv` board. Channels aren't assigned yet.
+There are ten names, `<finger>_base` and `<finger>_tip`, for thumb, index, middle, ring and pinky, all on the `hv` board:
+
+| Finger | Base | Tip |
+| --- | --- | --- |
+| Thumb | hv 0 | hv 1 |
+| Index | hv 3 | hv 2 |
+| Middle | hv 4 | hv 5 |
+| Ring | hv 6 | hv 7 |
+| Pinky | hv 8 | hv 9 |
+
+Until they are calibrated, every finger has 1700 / 8100 as its starting pulses (the thumb the other way round).
 
 ### Left hand
 
@@ -174,7 +184,7 @@ Pulses are PCA9685 `duty_cycle` counts at 50 Hz. 1638 to 8191 is 0.5 ms to 2.5 m
 | `--dry-run` | No hardware. Every script takes it. |
 | `--sim-ip` | Send commands to the sim at that address (`127.0.0.1` for the same computer) |
 | SAFE / WAIT / ARMED | `power_box.py` states. Scripts start in WAIT with signals off, arm when you press Enter, and drop to SAFE if the E-stop is pressed. |
-| `calibration.json` | Bench values saved by `calibrate_servo.py` and `hand_console.py`. Lives in `Hardware/` on the Jetson. Git ignores it. |
+| `calibration.json` | Bench values saved by `calibrate_servo.py`, `hand_console.py` (poses) and `hand_mimic.py --calibrate` (tracking ranges). Lives in `Hardware/` on the Jetson. Git ignores it. |
 
 ## 7. Getting started
 
@@ -197,10 +207,11 @@ python Sim/mvmnt_demo.py --mimic --show     # both sim hands follow your hands o
 
 ### On the Jetson (real hand)
 
-- The Jetson has no internet. Code goes over the direct Ethernet cable (laptop `192.168.10.1`, Jetson `192.168.10.2`): commit on the laptop, then `git push jetson Jimmy`. Without the cable, use a git bundle: `git bundle create update.bundle Jimmy` on the laptop, then `git pull /path/to/update.bundle Jimmy` on the Jetson in `~/CapstoneBioGuitar`.
+- The Jetson has no internet. Code goes over the direct Ethernet cable (laptop `192.168.10.1`, Jetson `192.168.10.2`): commit on the laptop, then `git push jetson main`. Without the cable, use a git bundle: `git bundle create update.bundle main` on the laptop, then `git pull /path/to/update.bundle main` on the Jetson in `~/CapstoneBioGuitar`.
 - Run `python3 run.py ...` **without** sudo. It asks for the password itself when it starts the servo part. The sim needs your desktop session, and sudo's Python can't see packages pip installed for your user (OpenCV, MediaPipe). `run.py` handles that.
 - Scripts run on their own (not through `run.py`) need sudo for GPIO and I2C, plus your user's packages, so run them with the `servo` shortcut: `servo Hardware/...`. Plain `sudo python3` gives a missing-module error. Set the shortcut up once with
-  `echo "alias servo='sudo PYTHONPATH=\$(python3 -m site --user-site) python3'" >> ~/.bashrc && source ~/.bashrc`.
+  `echo "alias servo='sudo DISPLAY=\$DISPLAY XAUTHORITY=\${XAUTHORITY:-\$HOME/.Xauthority} PYTHONPATH=\$(python3 -m site --user-site) python3'" >> ~/.bashrc && source ~/.bashrc`.
+  The `DISPLAY` / `XAUTHORITY` part lets `--show` windows open under sudo.
 - Servo packages: `Jetson.GPIO`, `adafruit-circuitpython-pca9685`, and either `adafruit-extended-bus` or Adafruit Blinka. Camera scripts also need `opencv-python` and `mediapipe`.
 - `Hardware/calibration.json` only exists on the Jetson. Back it up; it's the only copy of the measured values.
 
@@ -219,7 +230,7 @@ Run these on the Jetson with the box powered. Each servo script starts with sign
 
 ```
 sudo i2cdetect -y -r 7                            # should show 40 and 41
-servo Hardware/test_one_servo.py 13        # wiggle channel 13 on the 8.4 V board
+servo Hardware/test_one_servo.py 0         # wiggle channel 0 on the 8.4 V board (thumb_base)
 servo Hardware/test_one_servo.py 3 lv      # channel 3 on the 5 V board
 python3 Hardware/calibrate_servo.py --show        # what's calibrated and what's missing
 ```
@@ -236,7 +247,7 @@ python3 Hardware/calibrate_servo.py --show        # what's calibrated and what's
    - `min` / `max`: jog both ways until the wrist reaches its stop, then back off a little.
 2. Check the pulse scale: neutral +/- 1638 should turn the horn about 45 deg. If it doesn't, change `PULSE_PER_SERVO_DEG` in `servo_output.py`.
 3. Move all four together with `servo Hardware/calibrate_servo.py --wrist` and try `25 0`, `-20 0`, `0 20`, `25 20`.
-   - `25 0` should be the up-strum ready side. If it goes the other way, swap the `dev_pos` / `dev_neg` channel numbers in `WRIST_SERVOS`. Do the same for flex with `0 20`. This is also where the sign of `LIFT_FLEX_DEG` gets checked.
+   - `25 0` should be the up-strum ready side. If it goes the other way, run `python3 Hardware/calibrate_servo.py --swap dev` (no hardware needed). Do the same for flex with `0 20` and `--swap flex`. This is also where the sign of `LIFT_FLEX_DEG` gets checked.
    - At every pose all four strings should be snug: none slack, none straining. If they aren't, the geometry constants in `wrist_kinematics.py` don't match the real part.
 4. `python3 Hardware/servo_output.py --dry-run` prints the schedule, the pulses and how fast each servo has to turn.
 5. First real strum: `python3 run.py song --wrist-only --speed 0.25`, then 0.5, then 1.0.
@@ -245,9 +256,11 @@ python3 Hardware/calibrate_servo.py --show        # what's calibrated and what's
 
 HPS-0618SG servos, two per finger, all on the 8.4 V board (`hv`, 0x40): `<finger>_base` is the bottom segment and `<finger>_tip` is the upper two segments together. A finger pose is ten curl numbers, 0 = straight, 1 = fully curled.
 
-1. Calibrate each servo. The number after the name sets its channel:
+To tie the strings, `servo Hardware/calibrate_servo.py --open` holds every finger servo at its open pulse.
+
+1. Calibrate each servo. Its channel is already saved; a number after the name changes it (`index_tip 3`):
    ```
-   servo Hardware/calibrate_servo.py index_tip 3
+   servo Hardware/calibrate_servo.py index_tip
    ```
    Save `open` (finger straight, tendon just snug) and `closed` (curled to where it first touches its stop). Don't go past the stop: a stalled HPS-0618SG pulls up to 2.5 A and gets hot fast.
 2. Try one finger before the rest are wired: `servo Hardware/hand_console.py --no-wrist --fingers index`, then `finger index 0.3`, `servo index_tip 0.6`, `open`.
@@ -265,7 +278,7 @@ HPS-0618SG servos, two per finger, all on the 8.4 V board (`hv`, 0x40): `<finger
 | `left_ring` | 3 | same |
 | `left_pinky` | 4 | same |
 
-Channels 10-13 on this board are the wrist; 5-9, 14 and 15 are spare.
+Channels 10-13 on this board are the wrist; 0, 5-9, 14 and 15 are spare.
 
 ```
 python3 Hardware/left_hand.py --dry-run --show            # check the tracking, nothing moves
@@ -275,12 +288,12 @@ python3 run.py mimic --hand left                          # the real thing
 ```
 
 - Needs `opencv-python` and `mediapipe` on the Jetson.
-- `--dry-run --show` prints each finger's bend (its three joints added up). If a finger doesn't reach fully open or closed, change its `straight_deg` / `curled_deg` in `LEFT_TRACKING` in `Sim/hand_tracking.py`.
+- `--dry-run --show` prints each finger's bend (its three joints added up). If a finger doesn't reach fully open or closed, measure your hand with `python3 Hardware/hand_mimic.py --calibrate --hand left --show`, or change its `straight_deg` / `curled_deg` in `LEFT_TRACKING` in `Sim/hand_tracking.py`.
 - Power: the five left-hand servos stall at about 2 A each, so together they can use the whole 10 A 5 V supply. That's fine for the mimic in free air on its own, but not for fretting under load or running alongside the wrist.
 
 ### Camera mimic, both hands
 
-`hand_mimic.py` reads whether the hand in view is a left or a right and drives the matching robot hand; the other one eases open. The sim shows both hands' commands. The wrist is not driven.
+`hand_mimic.py` reads whether the hand in view is a left or a right and drives the matching robot hand; the other one eases open. The sim shows both hands' commands. The wrist is driven only with `--wrist` (from the tilt of your right hand).
 
 ```
 python3 Hardware/hand_mimic.py --dry-run --show   # check the tracking, nothing moves
@@ -291,8 +304,8 @@ python3 run.py mimic --hand right                 # always the right hand
 
 - First run: hold up your right hand and read the top line of the preview. If it says `left`, add `--swap-hands`.
 - The hands swap only after the camera has seen the other hand for `SWITCH_HOLD_S` (0.5 s), so a one-frame mislabel does nothing.
-- Right hand: each finger's `base` servo follows the knuckle and its `tip` servo follows the two outer joints added together (`RIGHT_TRACKING` in `Sim/hand_tracking.py`). To split them differently, change `_split()`. The `straight_deg` / `curled_deg` values are guesses: read the real angles off `--dry-run --show` with the finger straight and curled.
-- Servos with no calibration stay still, so until the right fingers are calibrated the right hand moves only in the sim.
+- Right hand: each finger's `base` servo follows the knuckle and its `tip` servo follows the two outer joints added together (`RIGHT_TRACKING` in `Sim/hand_tracking.py`). To split them differently, change `_split()`. The `straight_deg` / `curled_deg` values in the code are guesses. Measure your own once with `python3 Hardware/hand_mimic.py --calibrate --hand both --show`: hold your hand open, then in a fist (nothing moves). It saves the ranges and your wrist's straight pose (needed for `--wrist`) to `calibration.json`.
+- Servos with no calibration stay still. The right-hand fingers have starting pulses, so they move, but over an unmeasured range until they are calibrated.
 - Tracking uses MediaPipe's 3-D landmarks in video mode, so a finger reads the same however the hand is turned, and `CurlFilter` takes out the jitter. If the hand lags real moves, raise `BETA`; if it still shakes when you hold still, lower `MIN_CUTOFF_HZ` (both in `Sim/hand_tracking.py`).
 - Sim only, no Jetson: `python Sim/mvmnt_demo.py --mimic --show`. It tracks both hands at once (your left drives the left sim hand, your right the right one). A hand out of view for a second goes back to rest.
 
@@ -327,7 +340,7 @@ For the tempo test, film at 120 fps, type the frame number of each first string 
 
 ### Strike speed
 
-The CDR's 0.12 s strike needs about 563 deg/s at the wrist. With the placeholder geometry each servo turns about 1.5 deg per wrist degree, so the payout side peaks around 900 deg/s. The MG995 at 6 V is rated about 375 deg/s (0.16 s/60 deg, no load), so the wrist will lag the strike by about 2.4 times. The dry run prints the real numbers once the geometry is filled in. To close the gap:
+The CDR's 0.12 s strike needs about 563 deg/s at the wrist. With the measured geometry each servo turns about 2.68 deg per wrist degree, so the servos need about 1500 deg/s. The MG995 at 6 V is rated about 375 deg/s (0.16 s/60 deg, no load), so the wrist will lag the strike by about 4 times; `--speed 0.25` brings it down to about the rating. The dry run prints these numbers. To close the gap:
 
 - a larger spool radius, or tie points closer to the ball (more speed, less torque)
 - a longer `STRIKE_DURATION` or a narrower sweep in `Sim/strum_motion.py`
@@ -376,15 +389,14 @@ The hardware E-stop is the real safety. The software is designed so it never wor
 
 Placeholders that still need real values:
 
-- Wrist geometry constants at the top of `Hardware/wrist_kinematics.py` (take them from the 301/302/303 CAD).
-- Wrist `neutral_pulse` values, and confirmation of `reel_in_sign` and the pulse limits.
-- All finger channels and pulses in `fingers.py`.
-- `PICK_READY` / `PICK_GRIP` poses, `HOLDER_WRIST` / `LIFT_WRIST` in `pick_up.py`, and the camera-mimic angle ranges.
+- Wrist `reel_in_sign` and pulse limits (the neutral pulses are saved).
+- Finger open and closed pulses (the channels are saved; the pulses are 1700 / 8100 starting values).
+- `PICK_READY` / `PICK_GRIP` poses, `HOLDER_WRIST` / `LIFT_WRIST` in `pick_up.py`, and the camera-mimic angle ranges (measure them with `hand_mimic.py --calibrate`).
 - The sign of `LIFT_FLEX_DEG` (whether it lifts away from the guitar or into it) has to be checked on the real wrist.
 
 Things to know:
 
-- **Strike speed.** A 0.12 s strike needs a peak of about 900 deg/s at the servo with the current geometry. The MG995 is rated around 375 deg/s, so expect the wrist to lag the strike. The dry run prints these numbers. Options are under "Strike speed" in section 8.
+- **Strike speed.** A 0.12 s strike needs a peak of about 1500 deg/s at the servo with the measured geometry. The MG995 is rated around 375 deg/s, so expect the wrist to lag the strike. The dry run prints these numbers. Options are under "Strike speed" in section 8.
 - **`CALIBRATE = True` is set in `Sim/mvmnt_demo.py`.** Running the sim by itself opens the placement sliders instead of playing the song. Set it to `False` to see the strum on its own. `--follow` mode (what `run.py` uses) isn't affected.
 - **The sim shows commands, not measured motion.** The servos don't report their position. The sim's hand is the generic MPL model, not our design, and its wrist stops around -15 deg when -20 is commanded.
 - **Old scripts write straight to 0x40** with no safety layer: `Imitation/mimic.py`, `Imitation/servozero.py`, `Testing/servotest.py`, `Testing/servozero.py`. On the current box 0x40 is the right-hand finger board, so don't run them there. `Testing/servotest.py` also imports `ExtendedI2C` from the wrong package and probably won't run as written.
