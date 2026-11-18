@@ -8,6 +8,7 @@ import math
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 SEGMENTS = ("base", "tip")
 SERVO_NAMES = tuple(f"{f}_{s}" for f in FINGERS for s in SEGMENTS)
+LEFT_SERVO_NAMES = tuple(f"left_{f}" for f in FINGERS if f != "thumb")   # the left hand: one servo per finger, no thumb
 
 
 # make_pose(0.0, index=0.5, thumb=(0.7, 0.4)): a number sets both segments, a pair sets (base, tip).
@@ -89,6 +90,13 @@ def sim_joints(pose):
         for joint, full_deg in table[segment].items():
             joints[f"{finger}_{joint}"] = math.radians(full_deg * curl)
     return joints
+
+
+# Left hand curls ({left_index: curl, ...}) to joints of the left MPL hand; each finger curls as a whole.
+# Fingers with no curl (the thumb) stay straight.
+def left_sim_joints(curls):
+    return sim_joints({f"{finger}_{segment}": curls.get(f"left_{finger}", 0.0)
+                       for finger in FINGERS for segment in SEGMENTS})
 
 
 if __name__ == "__main__":

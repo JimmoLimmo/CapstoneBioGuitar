@@ -18,17 +18,20 @@ PULSE_ABS_MIN = 1638   # same last-resort clamp as servo_output.py (500-2500 us)
 PULSE_ABS_MAX = 8191
 
 # defaults; bench values come from calibration.json (calibrate_servo.py <servo> <channel>)
+# open_pulse defaults = each servo's pay-out end, where its string is tied with the finger straight,
+# so calibrate_servo.py starts there instead of at mid travel.
+# Every finger servo reels in going from a smaller to a bigger pulse.
 FINGER_SERVOS = {
-    "thumb_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "thumb_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "index_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "index_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "middle_base": {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "middle_tip":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "ring_base":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "ring_tip":    {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "pinky_base":  {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
-    "pinky_tip":   {"board": "hv", "channel": None, "open_pulse": None, "closed_pulse": None},
+    "thumb_base":  {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "thumb_tip":   {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "index_base":  {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "index_tip":   {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "middle_base": {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "middle_tip":  {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "ring_base":   {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "ring_tip":    {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "pinky_base":  {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
+    "pinky_tip":   {"board": "hv", "channel": None, "open_pulse": 2400, "closed_pulse": None},
 }
 assert set(FINGER_SERVOS) == set(SERVO_NAMES)
 calibration.apply("fingers", FINGER_SERVOS)

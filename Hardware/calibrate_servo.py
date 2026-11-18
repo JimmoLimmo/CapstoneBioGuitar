@@ -1,22 +1,34 @@
 """Bench calibration for the servos (right hand, and the left hand's fingers). Saved values go to Hardware/calibration.json.
 
 One servo by name -- jog it, then save where it is:
-    sudo python3 Hardware/calibrate_servo.py dev_pos        # wrist servo: dev_pos, dev_neg, flex_pos, flex_neg
-    sudo python3 Hardware/calibrate_servo.py index_tip 3    # finger servo on channel 3 of the 8.4 V board
-    sudo python3 Hardware/calibrate_servo.py left_index     # left-hand servo (left_index ... left_pinky)
+    servo Hardware/calibrate_servo.py dev_pos        # wrist servo: dev_pos, dev_neg, flex_pos, flex_neg
+    servo Hardware/calibrate_servo.py index_tip 3    # finger servo on channel 3 of the 8.4 V board
+    servo Hardware/calibrate_servo.py left_index     # left-hand servo (left_index ... left_pinky)
   At the prompt type a pulse (4900) or a nudge (+50, -50), then
     wrist servo:   neutral | min | max | sign + | sign -
     finger servo:  open | closed     (left-hand servos too)
   to save the pulse it is holding. `show` prints the servo's entry, `q` quits.
 
 One channel by number, nothing saved (wiring checks):
-    sudo python3 Hardware/calibrate_servo.py <channel 0-15> [hv|lv]
+    servo Hardware/calibrate_servo.py <channel 0-15> [hv|lv]
     (hv = 8.4 V board at 0x40, the default; lv = 5 V board at 0x41)
 
 Wrist mode -- once all four wrist servos have a neutral pulse, type wrist angles
 and all four move together through the tendon kinematics (checking directions,
 limits and string tension):
-    sudo python3 Hardware/calibrate_servo.py --wrist
+    servo Hardware/calibrate_servo.py --wrist
+
+All right-hand finger servos at their open pulse at once (e.g. to tie strings);
+NAME=CHANNEL saves (or changes) a servo's channel first:
+    servo Hardware/calibrate_servo.py --open
+    servo Hardware/calibrate_servo.py --open thumb_base=0 thumb_tip=1 index_base=2
+
+All four wrist servos at neutral (4900 until a neutral is saved), holding the wrist straight:
+    servo Hardware/calibrate_servo.py --straight
+
+A wrist axis moves backwards in --wrist mode: swap that pair's saved entries
+(channel, neutral, sign and limits move together; no hardware needed):
+    python3 Hardware/calibrate_servo.py --swap dev      # or flex
 
 What is calibrated and what is still missing (no hardware needed):
     python3 Hardware/calibrate_servo.py --show
@@ -158,7 +170,7 @@ def wrist_mode(dry_run=False):
         power.arm(lambda: so.write_wrist(bus, 0.0, 0.0))
         print("[calibrate] wrist at neutral. Type '<deviation> <flexion>' in degrees, e.g. '25 0' or '0 20'.")
         print("[calibrate]   '25 0' should be the up-strum READY side, '-20 0' the down-strum follow-through.")
-        print("[calibrate]   If the wrist goes the other way, swap the dev_pos/dev_neg (or flex) channel numbers.")
+        print("[calibrate]   If an axis goes the other way, quit and run: calibrate_servo.py --swap dev  (or flex)")
         print("[calibrate]   'q' parks at neutral and quits.")
         while True:
             raw = input(f"wrist (now {pose[0]:+.0f} {pose[1]:+.0f})> ").strip().lower()
@@ -190,6 +202,109 @@ def wrist_mode(dry_run=False):
         print("[calibrate] signals off, servos released.")
 
 
+# Hold every right-hand finger servo that has a channel at its open pulse.
+# `assignments` ({name: channel}) are saved first.
+def open_mode(assignments, dry_run=False):
+    channels = {n: assignments.get(n, c["channel"]) for n, c in fh.FINGER_SERVOS.items()}
+    seen = {}
+    for name, channel in channels.items():
+        if channel is not None:
+            seen.setdefault((so.BOARDS[fh.FINGER_SERVOS[name]["board"]], channel), []).append(name)
+    clashes = [names for names in seen.values() if len(names) > 1]
+    if clashes:
+        for names in clashes:
+            print(f"[calibrate] {', '.join(names)} would be on the same channel. Nothing saved; fix that first.")
+        return
+
+    for name, channel in assignments.items():
+        cfg = fh.FINGER_SERVOS[name]
+        try:
+            calibration.save("fingers", name, {"board": cfg["board"], "channel": channel})
+        except OSError as e:
+            print(f"[calibrate] could not write {calibration.path()} ({e})")
+            return
+        cfg["channel"] = channel
+
+    targets = {n: c for n, c in fh.FINGER_SERVOS.items() if c["channel"] is not None and c["open_pulse"] is not None}
+    if not targets:
+        print("[calibrate] no finger servo has a channel yet. Give them, e.g.: --open index_tip=3 index_base=2")
+        return
+
+    for name, c in targets.items():
+        others = shared_with(name, c["board"], c["channel"])
+        note = f"  (also assigned to {', '.join(others)})" if others else ""
+        print(f"  {name:12} {c['board']} ch{c['channel']:<2}  open {c['open_pulse']}{note}")
+    skipped = [n for n in fh.FINGER_SERVOS if n not in targets]
+    if skipped:
+        print(f"[calibrate] no channel, left alone: {', '.join(skipped)}")
+
+    hold([(c["board"], c["channel"], c["open_pulse"]) for c in targets.values()], "fingers holding open", dry_run)
+
+
+# Every wrist servo to its neutral pulse (4900 if none is saved yet), which holds the wrist straight.
+def straight_mode(dry_run=False):
+    missing = [n for n, c in so.WRIST_SERVOS.items() if c["channel"] is None]
+    if missing:
+        print(f"[calibrate] no channel for {', '.join(missing)}; set it in servo_output.py or calibration.json.")
+        return
+    targets = []
+    for name, c in so.WRIST_SERVOS.items():
+        pulse = START_PULSE if c["neutral_pulse"] is None else c["neutral_pulse"]
+        note = "" if c["neutral_pulse"] is not None else "  (no neutral saved, using the middle of travel)"
+        print(f"  {name:9} {c['board']} ch{c['channel']:<2}  {pulse}{note}")
+        targets.append((c["board"], c["channel"], pulse))
+    hold(targets, "wrist holding straight", dry_run)
+
+
+# Arm, send each (board, channel, pulse), and hold until Enter or q.
+def hold(targets, message, dry_run=False):
+    boards = tuple(sorted({board for board, _, _ in targets}))
+    bus = so.ServoBus(dry_run=dry_run, boards=boards)
+    power = PowerBox(dry_run=dry_run, on_safe=bus.release)
+
+    def write_all():
+        for board, channel, pulse in targets:
+            bus.set(board, channel, pulse)
+
+    try:
+        power.arm(write_all)
+        print(f"[calibrate] {message}. Enter or q releases.")
+        while True:
+            raw = input("hold> ").strip().lower()
+            power.check()
+            if raw in ("", "q", "quit", "exit"):
+                break
+    except EStop:
+        print("[calibrate] stopped by the E-stop.")
+    except (KeyboardInterrupt, EOFError):
+        print()
+    finally:
+        power.close()
+        bus.release()
+        print("[calibrate] signals off, servos released.")
+
+
+PAIRS = {"dev": ("dev_pos", "dev_neg"), "flex": ("flex_pos", "flex_neg")}
+
+
+# Swap two wrist servos' whole entries, so each physical servo keeps its own neutral, sign and limits.
+def swap_pair(axis):
+    a, b = PAIRS[axis]
+    first, second = dict(so.WRIST_SERVOS[a]), dict(so.WRIST_SERVOS[b])
+    try:
+        calibration.save("wrist", a, second)
+        calibration.save("wrist", b, first)
+    except OSError as e:
+        print(f"[calibrate] could not write {calibration.path()} ({e})")
+        return
+    so.WRIST_SERVOS[a].update(second)
+    so.WRIST_SERVOS[b].update(first)
+    print(f"[calibrate] swapped {a} and {b}:")
+    print("  " + entry_line(a))
+    print("  " + entry_line(b))
+    print("[calibrate] check again with --wrist.")
+
+
 def show():
     exists = os.path.isfile(calibration.path())
     print(f"[calibrate] file: {calibration.path()}" + ("" if exists else "  (not created yet; these are the defaults)"))
@@ -210,12 +325,29 @@ def main():
     parser.add_argument("target", nargs="?", help="servo name (dev_pos, index_tip...) or channel number 0-15")
     parser.add_argument("where", nargs="*", help="channel number and/or board (hv, lv)")
     parser.add_argument("--wrist", action="store_true", help="move all four wrist servos together")
+    parser.add_argument("--straight", action="store_true", help="hold all four wrist servos at neutral")
+    parser.add_argument("--swap", choices=sorted(PAIRS), help="swap a wrist pair whose axis moves backwards")
+    parser.add_argument("--open", nargs="*", metavar="NAME=CHANNEL",
+                        help="hold every right-hand finger servo at its open pulse")
     parser.add_argument("--show", action="store_true", help="print the calibration in use")
     parser.add_argument("--dry-run", action="store_true", help="no hardware")
     args = parser.parse_args()
 
     if args.show:
         return show()
+    if args.open is not None:
+        assignments = {}
+        # pairs after another flag (--open --dry-run a=1) land in the positionals
+        for word in args.open + ([args.target] if args.target else []) + args.where:
+            name, _, number = word.partition("=")
+            if name not in fh.FINGER_SERVOS or not number.isdigit() or not 0 <= int(number) <= 15:
+                parser.error(f"--open takes finger servo=channel pairs like index_tip=3, not {word!r}")
+            assignments[name] = int(number)
+        return open_mode(assignments, args.dry_run)
+    if args.swap:
+        return swap_pair(args.swap)
+    if args.straight:
+        return straight_mode(args.dry_run)
     if args.wrist:
         return wrist_mode(args.dry_run)
     if args.target is None:

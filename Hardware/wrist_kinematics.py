@@ -29,14 +29,16 @@ Coordinate frame (forearm frame, millimetres):
 
 import math
 
-# geometry (TODO: measure from the CAD / the printed parts)
-# Every number here is a PLACEHOLDER sized from the CDR drawing (0.75 in wrist,
-# servo horns). Get the real values from the 301/302/303 CAD files.
-ARM_RADIUS_MM = 15.0       # horizontal distance from ball center to each arm's tendon tie point
-ARM_DROP_MM = 10.0         # how far BELOW the ball center those tie points sit
-ANCHOR_RADIUS_MM = 15.0    # horizontal distance from the post to where each tendon leaves its spool/guide
-ANCHOR_DROP_MM = 60.0      # how far below the ball center that exit point is
-SPOOL_RADIUS_MM = 10.0     # radius the tendon wraps on (re-measure on the real horn/spool)
+# geometry (TODO: measure the rest from the CAD / the printed parts)
+# All measured on the built hand (2026-11-17).
+# All measured with the wrist straight. The two pairs can differ:
+#   "dev"  = thumb-side and pinky-side strings (dev_neg, dev_pos), seen facing the palm
+#   "flex" = back-of-hand and palm-side strings (flex_pos, flex_neg), seen side on
+ARM_RADIUS_MM = {"dev": 30.0, "flex": 30.0}      # sideways from the ball center to the knots; measured 1.18 in (30 mm), same all round
+ARM_DROP_MM = {"dev": 0.0, "flex": 0.0}          # how far BELOW the ball center that tie point sits (negative if above); measured 0
+ANCHOR_RADIUS_MM = {"dev": 16.51, "flex": 16.51}  # sideways from the post's center to where the string leaves the post; measured 0.65 in to the hole center
+ANCHOR_DROP_MM = {"dev": 98.425, "flex": 98.425}  # how far below the ball center that exit point is; measured 3.875 in
+SPOOL_RADIUS_MM = 11.1125  # radius the tendon wraps on; measured 0.4375 in
 
 # MG995 run at 6 V: 0.16 s/60 deg, no load (~375 deg/s; ~300 deg/s at 4.8 V).
 # Rated 4.8-7.2 V. Was the HPS-0618SG (~1000 deg/s).
@@ -48,8 +50,8 @@ SERVO_RATED_DEG_PER_S = 375.0
 # Tendons pull DOWN, so the puller for a direction is on the side that drops:
 #   +deviation about +x lifts +y and drops -y, so its puller sits at -y.
 #   +flexion   about +y lifts -x and drops +x, so its puller sits at +x.
-# If the real hand moves the wrong way on the bench, swap the two CHANNEL
-# numbers for that pair in servo_output.py, don't edit these.
+# If the real hand moves the wrong way on the bench, swap that pair with
+# calibrate_servo.py --swap dev (or flex), don't edit these.
 SERVO_SIDES = {
     "dev_pos": (0.0, -1.0),
     "dev_neg": (0.0, 1.0),
@@ -69,14 +71,20 @@ def _rotate(point, dev_deg, flex_deg):
     return x, y, z
 
 
+def _axis(name):
+    return name.split("_")[0]
+
+
 def _tie_point(name):
     sx, sy = SERVO_SIDES[name]
-    return (sx * ARM_RADIUS_MM, sy * ARM_RADIUS_MM, -ARM_DROP_MM)
+    r, drop = ARM_RADIUS_MM[_axis(name)], ARM_DROP_MM[_axis(name)]
+    return (sx * r, sy * r, -drop)
 
 
 def _anchor_point(name):
     sx, sy = SERVO_SIDES[name]
-    return (sx * ANCHOR_RADIUS_MM, sy * ANCHOR_RADIUS_MM, -ANCHOR_DROP_MM)
+    r, drop = ANCHOR_RADIUS_MM[_axis(name)], ANCHOR_DROP_MM[_axis(name)]
+    return (sx * r, sy * r, -drop)
 
 
 # {servo_name: tendon length in mm} with the wrist at this pose.
@@ -136,8 +144,10 @@ def profile(schedule, wrist_at, step=0.002):
 
 def _report():
     print("Marionette wrist -- tendon kinematics with the CURRENT geometry constants")
-    print(f"  arm r={ARM_RADIUS_MM} drop={ARM_DROP_MM} | anchor r={ANCHOR_RADIUS_MM} "
-          f"drop={ANCHOR_DROP_MM} | spool r={SPOOL_RADIUS_MM}  (mm, placeholders until measured)\n")
+    for axis in ("dev", "flex"):
+        print(f"  {axis:4}  arm r={ARM_RADIUS_MM[axis]} drop={ARM_DROP_MM[axis]} | "
+              f"anchor r={ANCHOR_RADIUS_MM[axis]} drop={ANCHOR_DROP_MM[axis]}")
+    print(f"  spool r={SPOOL_RADIUS_MM}  (mm)\n")
     print(f"{'dev':>5} {'flex':>5} | " + " ".join(f"{n:>9}" for n in SERVO_NAMES) + " | mirror error dev/flex (mm)")
     for dev, flex in [(-20, 0), (-10, 0), (0, 0), (10, 0), (25, 0), (0, 20), (25, 20), (-20, 20)]:
         a = servo_angles(dev, flex)
@@ -146,7 +156,9 @@ def _report():
               + f" | {e['dev']:+.2f} / {e['flex']:+.2f}")
 
     ratio = abs(servo_angles(1.0, 0.0)["dev_pos"])
-    print(f"\nServo turns ~{ratio:.2f} deg per wrist deg near neutral (about arm radius / spool radius).")
+    flex_ratio = abs(servo_angles(0.0, 1.0)["flex_pos"])
+    print(f"\nNear neutral a servo turns ~{ratio:.2f} deg per wrist deg on the strum axis (dev) and "
+          f"~{flex_ratio:.2f} on the lift axis (flex), about arm radius / spool radius.")
     print(f"CDR strike needs ~563 deg/s at the wrist -> ~{563 * ratio:.0f} deg/s at the servo "
           f"({SERVO_NAME} rated ~{SERVO_RATED_DEG_PER_S:.0f} deg/s, no load).")
     if 563 * ratio > SERVO_RATED_DEG_PER_S:

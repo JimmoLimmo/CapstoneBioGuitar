@@ -7,7 +7,7 @@ Tries three states on header pins 7 and 11 (IN1 / IN2) and asks you to press
 RESET after each one. At the end it tells you which RELAY_MODE to set in
 power_box.py.
 
-    sudo python3 Hardware/relay_polarity_test.py
+    servo Hardware/relay_polarity_test.py
 
 Before running: unplug the servo connectors (or at least keep hands clear of
 the hand), MAIN switch on, E-stop released. No PWM is sent, so servos should

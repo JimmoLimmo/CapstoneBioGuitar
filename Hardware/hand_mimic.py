@@ -1,20 +1,25 @@
 """Camera mimic for both hands: hold a left or a right hand up to the camera and the matching robot hand follows it.
 
     python3 run.py mimic --show                        # from the repo root, sim alongside
-    sudo python3 Hardware/hand_mimic.py                # on its own
+    servo Hardware/hand_mimic.py                # on its own
     python3 Hardware/hand_mimic.py --dry-run --show    # camera only: shows the tracking, moves nothing
     python3 run.py mimic --hand left                   # always the left hand, whatever the camera sees
     python3 run.py mimic --swap-hands                  # if your right hand comes up as "left" in the preview
+    python3 Hardware/hand_mimic.py --calibrate --hand right --show   # measure your hand's open and fist angles once
 
 The left hand is left_hand.py's (one servo per finger). The right hand uses the
-finger servos in fingers.py (base + tip per finger) and is what the sim shows.
-The hand that isn't being followed eases open. The wrist is not driven.
+finger servos in fingers.py (base + tip per finger). The sim shows both. The
+hand that isn't being followed eases open. The wrist is not driven.
+
+The camera runs in its own thread and the servos are updated 50 times a second,
+easing toward the latest reading, so the hand moves smoothly between frames.
 """
 
 import argparse
-import math
 import os
+import statistics
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,85 +27,41 @@ REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO_ROOT, "Sim"))
 sys.path.insert(0, HERE)
 
+import calibration  # noqa: E402
 import finger_motion as fm  # noqa: E402
 import fingers as fh  # noqa: E402
+import hand_tracking as ht  # noqa: E402
 import left_hand as lh  # noqa: E402
 import servo_output as so  # noqa: E402
 from motion_link import DEFAULT_PORT, PoseSender  # noqa: E402
 from power_box import EStop, PowerBox  # noqa: E402
 from strum_motion import smooth  # noqa: E402
 
-SIDES = ("left", "right")
+SIDES = ht.SIDES
 SWITCH_HOLD_S = 0.5    # the camera has to see the other hand for this long before the robot hands swap
+assert set(ht.RIGHT_TRACKING) == set(fm.SERVO_NAMES)
+MEASURED = ht.apply_ranges(calibration.load().get("tracking", {}))
 
-
-# right hand: camera to curls
-# joints = MediaPipe landmarks (a, b, c); the bend is how far b is from straight,
-# added up over the joints listed. straight_deg / curled_deg = that sum with the
-# finger straight / fully curled. All guesses: read the real ones off --dry-run --show.
-
-def _finger(mcp, pip, dip, tip):
-    return {"base": {"joints": ((0, mcp, pip),), "straight_deg": 15.0, "curled_deg": 80.0},
-            "tip": {"joints": ((mcp, pip, dip), (pip, dip, tip)), "straight_deg": 10.0, "curled_deg": 150.0}}
-
-
-_BY_FINGER = {
-    "thumb": {"base": {"joints": ((1, 2, 3),), "straight_deg": 10.0, "curled_deg": 50.0},
-              "tip": {"joints": ((2, 3, 4),), "straight_deg": 10.0, "curled_deg": 70.0}},
-    "index": _finger(5, 6, 7, 8),
-    "middle": _finger(9, 10, 11, 12),
-    "ring": _finger(13, 14, 15, 16),
-    "pinky": _finger(17, 18, 19, 20),
-}
-RIGHT_TRACKING = {f"{finger}_{segment}": t for finger, segments in _BY_FINGER.items() for segment, t in segments.items()}
-assert set(RIGHT_TRACKING) == set(fm.SERVO_NAMES)
-
-
-# Degrees the joint at b is bent away from straight; None if two landmarks coincide.
-def bend(points, a, b, c):
-    u = (points[b].x - points[a].x, points[b].y - points[a].y, points[b].z - points[a].z)
-    v = (points[c].x - points[b].x, points[c].y - points[b].y, points[c].z - points[b].z)
-    norm = math.sqrt(sum(x * x for x in u) * sum(x * x for x in v))
-    if norm == 0:
-        return None
-    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(u, v)) / norm))))
-
-
-# {servo: summed bend in degrees} from one hand's 21 landmarks.
-def right_bends(points):
-    out = {}
-    for name, t in RIGHT_TRACKING.items():
-        bends = [bend(points, *joint) for joint in t["joints"]]
-        if None not in bends:
-            out[name] = sum(bends)
-    return out
-
-
-def right_curl(name, degrees):
-    t = RIGHT_TRACKING[name]
-    return max(0.0, min(1.0, (degrees - t["straight_deg"]) / (t["curled_deg"] - t["straight_deg"])))
+CAL_SECONDS = 2.0       # how long each pose (open, fist) is recorded for --calibrate
+CAL_MIN_SAMPLES = 10    # frames a servo needs in each pose to be measured
+CAL_EDGE = 0.05         # pull each measured range in by this share so a real hand reaches 0 and 1
 
 
 # which hand
 
-# Turns the camera's Left/Right label into the robot hand to drive.
+# Turns the camera's left/right label into the robot hand to drive.
 class HandPicker:
 
-    def __init__(self, forced=None, swap=False):
+    def __init__(self, forced=None):
         self.forced = forced
-        self.swap = swap
         self.active = forced
         self.seen = None
         self.candidate = None
         self.since = 0.0
 
-    # label = "Left"/"Right" from MediaPipe, or None with no hand in view. Returns the active side.
+    # label = "left"/"right" from the camera, or None with no hand in view. Returns the active side.
     def update(self, label, now):
-        side = label.lower() if label else None
-        if side not in SIDES:
-            side = None
-        elif self.swap:
-            side = "left" if side == "right" else "right"
+        side = label if label in SIDES else None
         self.seen = self.forced if (self.forced and label) else side
         if self.forced:
             return self.active
@@ -111,6 +72,100 @@ class HandPicker:
         elif now - self.since >= SWITCH_HOLD_S:
             self.active, self.candidate = side, None
         return self.active
+
+
+# camera
+
+# Reads the camera and runs the tracker in the background, keeping only the newest frame.
+class CameraThread:
+
+    def __init__(self, camera):
+        self.camera = camera
+        self.lock = threading.Lock()
+        self.latest = None
+        self.frames = 0
+        self.failed = False
+        self.stopping = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def _run(self):
+        while not self.stopping.is_set():
+            frame, seen = self.camera.read()
+            if frame is None:
+                self.failed = True
+                return
+            with self.lock:
+                self.latest = (frame, seen, time.perf_counter())
+                self.frames += 1
+
+    # (frame, seen, time) if a new frame arrived since the last call, else None.
+    def take(self):
+        with self.lock:
+            item, self.latest = self.latest, None
+        return item
+
+    def close(self):
+        self.stopping.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+        self.camera.close()
+
+
+# Record the bends with the hand open, then in a fist, and save them as that side's ranges.
+def calibrate_tracking(camera, side, show):
+    poses = (("open", f"Hold your {side} hand up to the camera, fingers and thumb straight."),
+             ("fist", "Now make a fist, thumb curled in too."))
+    recorded = {}
+    for pose, prompt in poses:
+        input(f"[calibrate] {prompt}\n[calibrate] Press Enter, then hold still for {CAL_SECONDS:.0f} s... ")
+        samples, wrong = {}, 0
+        end = time.perf_counter() + CAL_SECONDS
+        while time.perf_counter() < end:
+            frame, seen = camera.read()
+            if frame is None:
+                raise SystemExit("[calibrate] the camera stopped sending frames.")
+            hand = next((h for h in seen if h.label == side), None)
+            if hand is None and seen:
+                wrong += 1
+            if hand is not None:
+                for name, deg in ht.curls(hand.world, side)[1].items():
+                    samples.setdefault(name, []).append(deg)
+            if show:
+                camera.show(frame, seen, [f"{pose}: hold still"], "hand mimic")
+        if wrong and not samples:
+            print(f"[calibrate] the camera only saw a hand it calls the other side. "
+                  f"Use your {side} hand, or add --swap-hands.")
+        recorded[pose] = samples
+
+    ranges, problems = {}, []
+    for name in ht.TRACKING[side]:
+        straight, curled = recorded["open"].get(name, []), recorded["fist"].get(name, [])
+        if len(straight) < CAL_MIN_SAMPLES or len(curled) < CAL_MIN_SAMPLES:
+            problems.append(f"{name}: hand not seen long enough ({len(straight)} open / {len(curled)} fist frames)")
+            continue
+        a, b = statistics.median(straight), statistics.median(curled)
+        span = b - a
+        if span < ht.MIN_SPAN_DEG:
+            problems.append(f"{name}: open {a:.0f} deg and fist {b:.0f} deg are too close to use")
+            continue
+        ranges[name] = {"straight_deg": round(a + CAL_EDGE * span, 1), "curled_deg": round(b - CAL_EDGE * span, 1)}
+
+    for name, r in ranges.items():
+        print(f"  {name:12} straight {r['straight_deg']:6.1f} deg   curled {r['curled_deg']:6.1f} deg")
+    for p in problems:
+        print(f"  {p}  (keeps its old range)")
+    if not ranges:
+        print("[calibrate] nothing measured; nothing saved.")
+        return
+    try:
+        calibration.save("tracking", side, ranges)
+    except OSError as e:
+        print(f"[calibrate] could not write {calibration.path()} ({e})")
+        return
+    print(f"[calibrate] saved {len(ranges)} ranges for the {side} hand. Run the mimic to try them.")
 
 
 # servos
@@ -132,12 +187,13 @@ def clashes():
             for (address, channel), names in sorted(users.items()) if len(names) > 1]
 
 
-# Send both poses and tell the sim about the right one. Returns the left hand's pulses.
+# Send both poses to the servos and the sim. Returns the left hand's pulses.
 def write_hands(bus, hands, left_pose, right_pose):
     sent = lh.write(bus, left_pose) if "left" in hands else {}
     if "right" in hands:
         fh.write_fingers(bus, right_pose)
-    bus.publish(0.0, 0.0, right_pose)
+    if bus.sim:
+        bus.sim.send(0.0, 0.0, right_pose, left=left_pose)
     return sent
 
 
@@ -176,9 +232,29 @@ def main():
                         help="auto = whichever hand the camera sees; left/right = always that robot hand")
     parser.add_argument("--swap-hands", action="store_true",
                         help="flip the camera's left/right label (use it if your right hand shows as left)")
-    parser.add_argument("--sim-ip", help="stream the right hand's finger commands to mvmnt_demo.py --follow")
+    parser.add_argument("--sim-ip", help="stream both hands' finger commands to mvmnt_demo.py --follow")
     parser.add_argument("--sim-port", type=int, default=DEFAULT_PORT, help="UDP port for --sim-ip")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="measure your hand open and in a fist (camera only, nothing moves), then quit")
     args = parser.parse_args()
+
+    if args.calibrate:
+        side = "right" if args.hand == "auto" else args.hand
+        camera = ht.Camera(args.camera, swap=args.swap_hands)
+        if args.show and not camera.preview_works():
+            print("[calibrate] can't open a preview window here; carrying on without it.")
+            args.show = False
+        try:
+            calibrate_tracking(camera, side, args.show)
+        except (KeyboardInterrupt, EOFError):
+            print()
+        finally:
+            camera.close()
+        return
+    if MEASURED:
+        print(f"[mimic] using measured ranges for {len(MEASURED)} servos.")
+    else:
+        print("[mimic] using guessed ranges; run with --calibrate to measure your hand.")
 
     hands = SIDES if args.hand == "auto" else (args.hand,)
     issues = clashes()
@@ -198,7 +274,7 @@ def main():
         if len(ready) < total:
             print(f"[mimic] {side} hand: {len(ready)} of {total} servos calibrated; the rest stay still.")
 
-    camera = lh.Camera(args.camera)
+    camera = ht.Camera(args.camera, swap=args.swap_hands)
     if args.show and not camera.preview_works():
         print("[mimic] can't open a preview window here; carrying on without it.")
         args.show = False
@@ -210,58 +286,85 @@ def main():
     if args.sim_ip:
         try:
             bus.sim = PoseSender(args.sim_ip, args.sim_port)
-            print(f"[mimic] streaming the right hand to the sim at {bus.sim.addr[0]}:{args.sim_port}")
+            print(f"[mimic] streaming both hands to the sim at {bus.sim.addr[0]}:{args.sim_port}")
         except OSError as e:
             print(f"[mimic] can't reach sim address {args.sim_ip} ({e}); continuing without the sim.")
 
-    picker = HandPicker(None if args.hand == "auto" else args.hand, args.swap_hands)
+    picker = HandPicker(None if args.hand == "auto" else args.hand)
+    filters = {side: ht.CurlFilter() for side in SIDES}
     left_pose = {name: 0.0 for name in lh.LEFT_SERVOS}
     right_pose = dict(fm.OPEN)
+    left_target = dict(left_pose)
+    right_target = dict(right_pose)
+    grabber = CameraThread(camera)
+    period = 1.0 / so.CONTROL_HZ
     try:
         power.arm(lambda: write_hands(bus, hands, left_pose, right_pose))
         print("[mimic] following the camera. Ctrl-C stops" + (", so does q in the preview." if args.show else "."))
+        grabber.start()
         last = time.perf_counter()
+        next_tick = last
         next_print = 0.0
+        fps, fps_frames, fps_since = 0.0, 0, last
         was_active = picker.active
+        lines = []
         while True:
             power.check()
-            frame, hand = camera.read()
-            if frame is None:
+            if grabber.failed:
                 print("[mimic] the camera stopped sending frames.")
                 break
             now = time.perf_counter()
             dt, last = min(now - last, 0.2), now
-            active = picker.update(camera.label if hand else None, now)
-            if active != was_active:
-                print(f"[mimic] now following the {active} hand.")
-                was_active = active
-            follow = hand is not None and picker.seen == active
+            if now - fps_since >= 1.0:
+                fps = (grabber.frames - fps_frames) / (now - fps_since)
+                fps_frames, fps_since = grabber.frames, now
 
-            # the followed hand tracks the camera (or holds if the camera lost it); the other one opens
-            angles, bends = {}, {}
-            left_target = {} if active == "left" else {n: 0.0 for n in left_pose}
-            right_target = {} if active == "right" else dict(fm.OPEN)
-            if follow and active == "left":
-                angles = lh.finger_angles(hand)
-                left_target = {n: lh.curl_of(n, a) for n, a in angles.items()}
-            elif follow and active == "right":
-                bends = right_bends(camera.world or hand)
-                right_target = {n: right_curl(n, b) for n, b in bends.items()}
-            limit = lh.MAX_CURL_PER_S * dt
-            left_pose = lh.step(left_pose, left_target, limit)
-            right_pose = lh.step(right_pose, right_target, limit)
-            sent = write_hands(bus, hands, left_pose, right_pose)
+            item = grabber.take()
+            if item is not None:
+                frame, seen, stamp = item
+                hand = seen[0] if seen else None
+                active = picker.update(hand.label if hand else None, stamp)
+                if active != was_active:
+                    print(f"[mimic] now following the {active} hand.")
+                    was_active = active
+                follow = hand is not None and picker.seen == active
 
-            head = f"following: {active or 'nothing yet'}"
-            if picker.seen and picker.seen != active:
-                head += f"  (camera sees a {picker.seen} hand)"
-            lines = [head] + (right_lines(bends, right_pose) if active == "right"
-                              else lh.status_lines(angles, left_pose, sent) if active == "left" else [])
-            if args.dry_run and now >= next_print:
-                print(" | ".join(lines) if hand else "[mimic] no hand in view")
-                next_print = now + 0.5
-            if args.show and not camera.show(frame, hand, lines):
-                break
+                # the followed hand tracks the camera (or holds if the camera lost it); the other one opens
+                bends = {}
+                if active != "left":
+                    left_target = {n: 0.0 for n in left_pose}
+                if active != "right":
+                    right_target = dict(fm.OPEN)
+                if follow:
+                    raw, bends = ht.curls(hand.world, active)
+                    target = filters[active](raw, stamp)
+                    if active == "left":
+                        left_target = {**left_target, **ht.deadband(left_target, target)}
+                    else:
+                        right_target = {**right_target, **ht.deadband(right_target, target)}
+
+                head = f"following: {active or 'nothing yet'}  camera {fps:.0f} fps"
+                if picker.seen and picker.seen != active:
+                    head += f"  (camera sees a {picker.seen} hand)"
+                lines = [head] + (right_lines(bends, right_pose) if active == "right"
+                                  else lh.status_lines(bends, left_pose, lh.pulses(left_pose)) if active == "left"
+                                  else [])
+                if args.dry_run and now >= next_print:
+                    print(" | ".join(lines) if hand else f"[mimic] no hand in view  (camera {fps:.0f} fps)")
+                    next_print = now + 0.5
+                if args.show and not camera.show(frame, seen, lines):
+                    break
+
+            left_pose = ht.follow(left_pose, left_target, dt)
+            right_pose = ht.follow(right_pose, right_target, dt)
+            write_hands(bus, hands, left_pose, right_pose)
+
+            next_tick += period
+            pause = next_tick - time.perf_counter()
+            if pause > 0:
+                time.sleep(pause)
+            else:
+                next_tick = time.perf_counter()
     except EStop:
         print("[mimic] stopped by the E-stop.")
     except KeyboardInterrupt:
@@ -274,7 +377,7 @@ def main():
                 print(f"[mimic] could not open the hands ({e})")
         power.close()
         bus.release()
-        camera.close()
+        grabber.close()
         print("[mimic] stopped -- signals off, servos released.")
 
 

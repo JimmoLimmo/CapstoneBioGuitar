@@ -80,7 +80,7 @@ def apply_poses(finger_motion):
 
 # Merge `values` into section.name and write the file. Returns the entry as saved.
 def save(section, name, values):
-    if section != "poses":
+    if section not in ("poses", "tracking"):
         for key, value in values.items():
             check(key, value)
     data = load()
