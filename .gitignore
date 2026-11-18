@@ -4,3 +4,7 @@ Testing/results/dry_run/
 Hardware/calibration.json
 __pycache__/
 venv/
+*.bak*
+__pycache__/
+venv/
+*.bundle
