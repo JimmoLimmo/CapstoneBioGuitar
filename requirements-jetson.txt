@@ -3,5 +3,5 @@ numpy
 PyGuitarPro
 adafruit-circuitpython-pca9685
 adafruit-extended-bus
-opencv-python
+opencv-contrib-python
 mediapipe

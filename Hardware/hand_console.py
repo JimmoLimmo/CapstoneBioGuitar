@@ -26,6 +26,7 @@ HELP = """Commands (curl is 0 = straight to 1 = fully curled):
     pick / drop                grip the pick (hand-off) / let it go
     open / home / park         fingers open / wrist straight / both
     time SECONDS               how long each move takes (default 0.6)
+    hold SECONDS               stay in the current pose that long, still watching the E-stop
     show                       current pose and the pulses being sent
     save NAME                  keep the current finger pose as NAME (written to Hardware/calibration.json)
     q                          park and quit
@@ -122,6 +123,12 @@ class Console:
 
     def do_park(self):
         self.hand.park(self.seconds)
+
+    def do_hold(self, seconds):
+        seconds = float(seconds)
+        if seconds <= 0:
+            raise ValueError("seconds must be more than 0")
+        self.hand.hold(seconds)
 
     def do_time(self, seconds):
         seconds = float(seconds)

@@ -502,7 +502,14 @@ You should see \textbf{40} (\code{hv}, finger board), \textbf{41} (\code{lv}, wr
 
 
 \subsubsection*{Python packages}
-\code{requirements-{}\allowbreak{}jetson.txt} lists what the Jetson needs: \code{numpy}, \code{PyGuitarPro}, the servo libraries, and OpenCV and MediaPipe for the camera scripts. PyBullet isn't in it, because the sim runs on the laptop. \code{Jetson.GPIO} comes with JetPack, and \code{Hardware/\allowbreak{}i2c\_\allowbreak{}bus.py} also works with Adafruit Blinka in place of \code{adafruit-{}\allowbreak{}extended-{}\allowbreak{}bus}. Install the packages for the \code{guitar} user, not with sudo; the \code{servo} shortcut finds them there.
+\code{requirements-{}\allowbreak{}jetson.txt} lists what the Jetson needs: \code{numpy}, \code{PyGuitarPro}, the servo libraries, and OpenCV and MediaPipe for the camera scripts. PyBullet isn't in it, because the sim runs on the laptop. \code{Jetson.GPIO} comes with JetPack, and \code{Hardware/\allowbreak{}i2c\_\allowbreak{}bus.py} also works with Adafruit Blinka in place of \code{adafruit-{}\allowbreak{}extended-{}\allowbreak{}bus}. Install the packages for the \code{guitar} user, not with sudo; the \code{servo} shortcut finds them there. After installing, \code{pip3 list | grep -{}i opencv} should show only \code{opencv-{}\allowbreak{}contrib-{}\allowbreak{}python}. If \code{opencv-{}\allowbreak{}python-{}\allowbreak{}headless} is there too, the camera works but \code{-{}-{}show} prints ``can't open a preview window here'': it is a build with no windows, and it overwrites the other one's files. Uninstall every OpenCV package, then reinstall only the contrib wheel:
+%%begin novalidate
+\begin{codeblock}
+pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless
+pip3 install --user --no-deps ~/jetson_wheels/opencv_contrib_python-*.whl
+\end{codeblock}
+%%end novalidate
+
 
 If the Jetson can get internet some other way (a phone's USB tethering, a hotspot):
 
@@ -596,7 +603,7 @@ python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.
   \item \code{127.\allowbreak{}0.\allowbreak{}0.\allowbreak{}1} means this computer. With the sim on another computer, use that computer's address instead.
   \item \code{-{}-{}dry-{}\allowbreak{}run} keeps the script away from the servo boards. It still warns about uncalibrated servos; that's expected on the laptop.
   \item Leave out \code{-{}-{}wrist} to move the fingers only, or use \code{-{}-{}hand right} to follow one hand.
-  \item Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip \code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN} or \code{WRIST\_\allowbreak{}FLEX\_\allowbreak{}SIGN} in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}. The sim and the hand get the same numbers, so if only the real hand is reversed, the wrist servos are swapped instead (section 4.4).
+  \item Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip \code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN} or \code{WRIST\_\allowbreak{}FLEX\_\allowbreak{}SIGN} in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}. The sim and the hand get the same numbers, so if only the real hand is reversed, test the servos on their own before changing anything: \code{calibrate\_\allowbreak{}servo.py -{}-{}wrist}, type \code{25 0}. Toward the pinky means the servos are right; toward the thumb means they're swapped (\code{-{}-{}swap dev}, section 4.4). A different camera can read the tilt the other way, so check again after changing cameras.
   \item If the sim window shows nothing moving, the sim wasn't started first, or a firewall is blocking UDP port 5005.
 \end{itemize}
 
@@ -643,12 +650,13 @@ grdctl rdp set-credentials guitar password
 %%begin novalidate
 \begin{codeblock}
 cd ~/CapstoneBioGuitar
-python3 run.py mimic --show --hand both --wrist
+python3 run.py mimic --dry-run --show --hand both --wrist   # tracking and sim only, nothing moves
+python3 run.py mimic --show --hand both --wrist             # the real hand too
 \end{codeblock}
 %%end novalidate
 \end{enumerate}
 \begin{itemize}
-  \item The sim needs PyBullet on the Jetson, which \code{requirements-{}\allowbreak{}jetson.\allowbreak{}txt} leaves out. Check with \code{python3 -{}c \textquotedbl{}import pybullet\textquotedbl{}}. If it's missing, \code{run.py} says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
+  \item The sim needs PyBullet on the Jetson. The current Jetson has it; \code{requirements-{}\allowbreak{}jetson.\allowbreak{}txt} leaves it out, so a new Jetson won't. Check with \code{python3 -{}c \textquotedbl{}import pybullet\textquotedbl{}}. If it's missing, \code{run.py} says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
 %%begin novalidate
 \begin{codeblock}
 pip download pybullet --no-binary :all: --no-deps -d pybullet_src
@@ -828,7 +836,7 @@ Thumb & hv 0, 1 & \code{thumb\_\allowbreak{}base}, \code{thumb\_\allowbreak{}tip
 Index & hv 3, 2 & \code{index\_\allowbreak{}base}, \code{index\_\allowbreak{}tip} \\ \hline
 Middle & hv 4, 5 & \code{middle\_\allowbreak{}base}, \code{middle\_\allowbreak{}tip} \\ \hline
 Ring & hv 6, 7 & \code{ring\_\allowbreak{}base}, \code{ring\_\allowbreak{}tip} \\ \hline
-Pinky & hv 8, 9 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
+Pinky & hv 9, 8 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
 \end{longtable}}
 
 To tie the strings, put every finger servo at its open pulse with \code{servo Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py -{}-{}open}.
@@ -865,8 +873,8 @@ middle\_base & 4 &  &  \\ \hline
 middle\_tip & 5 &  &  \\ \hline
 ring\_base & 6 &  &  \\ \hline
 ring\_tip & 7 &  &  \\ \hline
-pinky\_base & 8 &  &  \\ \hline
-pinky\_tip & 9 &  &  \\ \hline
+pinky\_base & 9 &  &  \\ \hline
+pinky\_tip & 8 &  &  \\ \hline
 \end{longtable}}
 
 
@@ -1004,6 +1012,7 @@ servo Hardware/hand_console.py --no-wrist --fingers index  # just one finger, no
 \code{pick} / \code{drop} & Grip the pick (hand-off) / let it go \\ \hline
 \code{open} / \code{home} / \code{park} & Fingers open / wrist straight / both \\ \hline
 \code{time SECONDS} & How long each move takes (default 0.6) \\ \hline
+\code{hold SECONDS} & Stay in the current pose that long, still watching the E-stop. With \code{-{}-{}run}, e.g. \code{-{}-{}run \textquotedbl{}park; hold 600\textquotedbl{}}, it keeps the hand parked instead of letting go straight away. \\ \hline
 \code{show} & Current pose and the pulses being sent \\ \hline
 \code{save NAME} & Save the current finger pose to \code{calibration.json} \\ \hline
 \code{q} & Park and quit \\ \hline
@@ -1027,7 +1036,7 @@ python3 run.py mimic --hand right                 # always the right hand
 \begin{itemize}
   \item First run: hold up your right hand and read the top line of the preview. If it says \code{left}, add \code{-{}-{}swap-{}\allowbreak{}hands}.
   \item The hands swap only after the camera has seen the other hand for 0.5 s, so a one-frame mislabel does nothing.
-  \item \code{-{}-{}wrist} also drives the robot wrist from your right hand's tilt (needs \code{-{}-{}calibrate} first, section 4.8).
+  \item \code{-{}-{}wrist} also drives the robot wrist from your right hand's tilt (needs \code{-{}-{}calibrate} first, section 4.8). If the wrist goes the wrong way, check the servos first: \code{calibrate\_\allowbreak{}servo.py -{}-{}wrist}, then \code{25 0} should go toward the pinky. If it does, the servos are right and the camera reads the tilt the other way: flip \code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN} in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}. If it goes toward the thumb, the servos are swapped: \code{-{}-{}swap dev} (section 4.4). Changing both at once undoes the fix.
   \item Servos with no calibration stay still: they move only in the sim.
   \item If the hand lags real moves, raise \code{BETA}; if it shakes when you hold still, lower \code{MIN\_\allowbreak{}CUTOFF\_\allowbreak{}HZ} (both in \code{Sim/\allowbreak{}hand\_\allowbreak{}tracking.py}).
   \item Sim only, no Jetson: \code{python Sim/\allowbreak{}mvmnt\_\allowbreak{}demo.py -{}-{}mimic -{}-{}show} (fingers only). For the wrist too, run the camera and the sim together (section 3.5).
@@ -1512,7 +1521,7 @@ hv (0x40, 8.4 V) & 0, 1 & \code{thumb\_\allowbreak{}base}, \code{thumb\_\allowbr
 hv & 3, 2 & \code{index\_\allowbreak{}base}, \code{index\_\allowbreak{}tip} \\ \hline
 hv & 4, 5 & \code{middle\_\allowbreak{}base}, \code{middle\_\allowbreak{}tip} \\ \hline
 hv & 6, 7 & \code{ring\_\allowbreak{}base}, \code{ring\_\allowbreak{}tip} \\ \hline
-hv & 8, 9 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
+hv & 9, 8 & \code{pinky\_\allowbreak{}base}, \code{pinky\_\allowbreak{}tip} \\ \hline
 lv (0x41) & 1-4 & \code{left\_\allowbreak{}index}, \code{left\_\allowbreak{}middle}, \code{left\_\allowbreak{}ring}, \code{left\_\allowbreak{}pinky} \\ \hline
 lv & 10, 11 & \code{dev\_\allowbreak{}pos} (pinky side), \code{dev\_\allowbreak{}neg} (thumb side) \\ \hline
 lv & 12, 13 & \code{flex\_\allowbreak{}pos} (North, back of hand), \code{flex\_\allowbreak{}neg} (South, palm) \\ \hline
@@ -1663,6 +1672,7 @@ Script refuses: missing channel / neutral pulse & Calibrate the servos it lists 
 Script refuses: servos share a channel & Two servos have the same board and channel in \code{calibration.json}. Move one with \code{calibrate\_\allowbreak{}servo.py NAME CHANNEL}. \\ \hline
 Script prints its help text and quits & Wrong arguments. For example \code{test\_\allowbreak{}one\_\allowbreak{}servo.py} takes \code{<channel> <hv\textbar{}lv\textbar{}0x40\textbar{}0x41>}. \\ \hline
 ``A different mode has already been set!'' & Old code. Pull the latest (\code{power\_\allowbreak{}box.py} handles the GPIO numbering mode now). \\ \hline
+\code{-{}-{}show}: ``can't open a preview window here'' & Check \code{pip3 list | grep -{}i opencv}: a headless OpenCV can read the camera but can't open windows. Keep only \code{opencv-{}\allowbreak{}contrib-{}\allowbreak{}python} (section 3.3). \\ \hline
 \code{-{}-{}show} window doesn't open under sudo & Re-create the \code{servo} shortcut with the \code{DISPLAY} / \code{XAUTHORITY} part (section 3.3), or use \code{run.py}. \\ \hline
 \code{ping 192.168.10.2} fails & Link lights on both ports? \code{ip -{}4 addr} on the Jetson should show \code{192.168.10.2}. On the laptop, the static address must be on the adapter the cable is plugged into. \\ \hline
 Ping works but \code{ssh} doesn't & On the Jetson: \code{sudo systemctl enable -{}-{}now ssh}. \\ \hline
@@ -1676,6 +1686,8 @@ Remote desktop: ``credentials did not work'' & Windows sent your own account. Cl
 Remote desktop: ``The token supplied to the function is invalid'' & Remote desktop couldn't read its own login from the locked keyring. On the Jetson's desktop, \code{grdctl status -{}-{}show-{}\allowbreak{}credentials}: if the password isn't \code{password}, make the keyring password blank and set the login again (section 3.6). \\ \hline
 \code{ssh} stopped working after a reboot & SSH isn't set to start at boot. At the Jetson: \code{sudo systemctl enable -{}-{}now ssh}, or turn on Remote Login in Settings, Sharing. \\ \hline
 Remote desktop: black screen, lock screen or can't connect & The Jetson must be logged in to its desktop and not locked: turn on automatic login and turn off the screen lock (section 3.6). With no monitor, use an HDMI dummy plug. Check Sharing and Remote Desktop are still on. \\ \hline
+\code{[camera] can't open camera 1} & A USB webcam shows up as \code{/\allowbreak{}dev/\allowbreak{}video0} and \code{/\allowbreak{}dev/\allowbreak{}video1}; only \code{video0} is the picture. Leave \code{-{}-{}camera} off (camera 0). \\ \hline
+Mimic wrist goes the wrong way & \code{calibrate\_\allowbreak{}servo.py -{}-{}wrist}, \code{25 0}: toward the pinky means the camera sign (\code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN}); toward the thumb means the servos (\code{-{}-{}swap dev}). Fix only the one that's wrong (section 5.7). \\ \hline
 Sim shows nothing while the hand runs & Allow UDP port 5005 through the laptop's firewall; check the \code{-{}-{}sim-{}\allowbreak{}ip} address. \\ \hline
 \end{longtable}}
 

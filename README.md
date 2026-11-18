@@ -200,7 +200,7 @@ There are ten names, `<finger>_base` and `<finger>_tip`, for thumb, index, middl
 | Index | hv 3 | hv 2 |
 | Middle | hv 4 | hv 5 |
 | Ring | hv 6 | hv 7 |
-| Pinky | hv 8 | hv 9 |
+| Pinky | hv 9 | hv 8 |
 
 Until they are calibrated, every finger has 1700 / 8100 as its starting pulses (the thumb the other way round).
 
@@ -273,7 +273,7 @@ python Hardware/hand_mimic.py --dry-run --show --hand both --wrist --sim-ip 127.
 - `127.0.0.1` means this computer. With the sim on another computer, use that computer's address instead.
 - `--dry-run` keeps the script away from the servo boards. It still warns about uncalibrated servos; that's expected on the laptop.
 - Leave out `--wrist` to move the fingers only, or use `--hand right` to follow one hand.
-- Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip `WRIST_DEV_SIGN` or `WRIST_FLEX_SIGN` in `Sim/hand_tracking.py`. The sim and the hand get the same numbers, so if only the real hand is reversed, the wrist servos are swapped instead (`calibrate_servo.py --swap dev` or `--swap flex`).
+- Check directions by the hand's own sides: tilt toward your pinky and the sim hand should tilt toward its pinky; bend your hand back and it should bend toward the back of its hand. If one is reversed, flip `WRIST_DEV_SIGN` or `WRIST_FLEX_SIGN` in `Sim/hand_tracking.py`. The sim and the hand get the same numbers, so if only the real hand is reversed, test the servos on their own before changing anything: `calibrate_servo.py --wrist`, type `25 0`. Toward the pinky means the servos are right; toward the thumb means they're swapped (`calibrate_servo.py --swap dev`). A different camera can read the tilt the other way, so check again after changing cameras.
 - If the sim shows nothing moving, it wasn't started first, or a firewall is blocking UDP port 5005.
 
 ### Setting up a new Jetson
@@ -302,7 +302,7 @@ Skip this if the Jetson already has `~/CapstoneBioGuitar`. The Jetson has no int
    ```
    git remote add jetson ssh://guitar@192.168.10.2/home/guitar/CapstoneBioGuitar
    ```
-3. **Python packages.** `requirements-jetson.txt` has the servo libraries, OpenCV and MediaPipe (no PyBullet). Install them for the `guitar` user, not with sudo. If the Jetson can get internet some other way (a phone's USB tethering, a hotspot), run `pip3 install --user -r requirements-jetson.txt`. Otherwise download the wheels on the laptop (match `--python-version` to `python3 --version` on the Jetson; JetPack 6 has 3.10):
+3. **Python packages.** `requirements-jetson.txt` has the servo libraries, OpenCV and MediaPipe (no PyBullet). Install them for the `guitar` user, not with sudo. After installing, `pip3 list | grep -i opencv` should show only `opencv-contrib-python`. If `opencv-python-headless` is there too, the camera works but `--show` prints "can't open a preview window here": uninstall every OpenCV package (`pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless`) and reinstall only the `opencv-contrib-python` wheel with `pip3 install --user --no-deps <wheel>`. If the Jetson can get internet some other way (a phone's USB tethering, a hotspot), run `pip3 install --user -r requirements-jetson.txt`. Otherwise download the wheels on the laptop (match `--python-version` to `python3 --version` on the Jetson; JetPack 6 has 3.10):
    ```
    pip download -r requirements-jetson.txt -d jetson_wheels --platform manylinux2014_aarch64 --python-version 3.10 --only-binary=:all:
    scp -r jetson_wheels guitar@192.168.10.2:~/
@@ -352,10 +352,11 @@ Remote desktop shows the Jetson's whole desktop in a window on the laptop, over 
 6. In a terminal on the remote desktop:
    ```
    cd ~/CapstoneBioGuitar
-   python3 run.py mimic --show --hand both --wrist
+   python3 run.py mimic --dry-run --show --hand both --wrist   # tracking and sim only, nothing moves
+   python3 run.py mimic --show --hand both --wrist             # the real hand too
    ```
 
-- The sim needs PyBullet on the Jetson, which `requirements-jetson.txt` leaves out. Check with `python3 -c "import pybullet"`. If it's missing, `run.py` says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
+- The sim needs PyBullet on the Jetson. The current Jetson has it; `requirements-jetson.txt` leaves it out, so a new Jetson won't. Check with `python3 -c "import pybullet"`. If it's missing, `run.py` says so and runs without the sim. There's no ready-made aarch64 wheel, so download the source on the laptop and build it on the Jetson (about 15 to 20 minutes):
   ```
   pip download pybullet --no-binary :all: --no-deps -d pybullet_src
   scp -r pybullet_src guitar@192.168.10.2:~/
@@ -450,13 +451,16 @@ servo Hardware/calibrate_servo.py left_index 12    # move a servo to another cha
 python3 run.py mimic --hand left                          # the real thing
 ```
 
-- Needs `opencv-python` and `mediapipe` on the Jetson.
+- Needs `opencv-contrib-python` and `mediapipe` on the Jetson.
 - `--dry-run --show` prints each finger's bend (its three joints added up). If a finger doesn't reach fully open or closed, measure your hand with `python3 Hardware/hand_mimic.py --calibrate --hand left --show`, or change its `straight_deg` / `curled_deg` in `LEFT_TRACKING` in `Sim/hand_tracking.py`.
 - Power: the five left-hand servos stall at about 2 A each, so together they can use the whole 10 A 5 V supply. That's fine for the mimic in free air on its own, but not for fretting under load or running alongside the wrist.
 
 ### Camera mimic, both hands
 
 `hand_mimic.py` reads whether the hand in view is a left or a right and drives the matching robot hand; the other one eases open. The sim shows both hands' commands. The wrist is driven only with `--wrist` (from the tilt of your right hand).
+
+- **Wrist goes the wrong way?** Check the servos first: `servo Hardware/calibrate_servo.py --wrist`, then `25 0` should go toward the pinky. If it does, the servos are right and the camera reads the tilt the other way: flip `WRIST_DEV_SIGN` in `Sim/hand_tracking.py`. If it goes toward the thumb, the servos are swapped: `calibrate_servo.py --swap dev`. Changing both at once undoes the fix.
+- **`[camera] can't open camera 1`:** a USB webcam shows up as `/dev/video0` and `/dev/video1`, and only `video0` is the picture. Leave `--camera` off.
 
 ```
 python3 Hardware/hand_mimic.py --dry-run --show   # check the tracking, nothing moves
