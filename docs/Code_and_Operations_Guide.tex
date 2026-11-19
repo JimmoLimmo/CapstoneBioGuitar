@@ -642,9 +642,11 @@ grdctl rdp set-credentials guitar password
 \subsubsection*{Each time, on the laptop}
 \begin{enumerate}
   \item The direct cable is plugged in and \code{ping 192.168.10.2} works (section 3.1).
-  \item Open \textbf{Remote Desktop Connection} from the Start menu. Computer: \code{192.168.10.2}. Click Connect.
-  \item Windows fills in your own Microsoft account, which the Jetson won't accept. Click \textbf{More choices}, then \textbf{Use a different account}.
-  \item User name \code{guitar}, password \code{password}. Tick Remember me so next time skips this step. Click OK.
+  \item Open \textbf{Remote Desktop Connection} from the Start menu and click \textbf{Show Options}.
+  \item On the General tab: Computer \code{192.168.10.2}, User name \code{guitar}, and tick \textbf{Allow me to save credentials}. Filling in the user name here means Windows asks for the Jetson's login straight away, instead of trying your own Microsoft account first (no More choices step).
+  \item On the Display tab, drag the size slider all the way to \textbf{Full Screen}.
+  \item Back on the General tab, click \textbf{Save As} and save the connection (for example \code{Jetson.rdp} on the desktop). Next time, double-click that file and skip steps 2 to 5.
+  \item Click Connect. Password \code{password}, tick Remember me, click OK.
   \item If Windows warns that the remote computer's identity can't be verified, click Yes. That's expected on the direct cable.
   \item In a terminal on the remote desktop:
 %%begin novalidate
@@ -666,6 +668,8 @@ pip3 install --user ~/pybullet_src/pybullet-*.tar.gz      # on the Jetson
 %%end novalidate
   \item The sim, the camera tracking and the servo loop all share the Jetson. The sim is its own process and the servos never wait for it, but if the preview's camera fps drops a lot, add \code{-{}-{}no-{}\allowbreak{}sim}.
   \item With no monitor on the Jetson, remote desktop may show a black or tiny screen. An HDMI dummy plug fixes it.
+  \item \textbf{Full screen and back:} Ctrl + Alt + Break (on some laptops Ctrl + Alt + Fn + Pause). Without a Break key, right-click the window's title bar and choose Full screen. In full screen, the bar at the top centre has the window buttons; Ctrl + Alt + Home brings it up if it's hidden.
+  \item \textbf{Black bars around the desktop:} the Jetson's screen size doesn't match the window. Quick fix: right-click the title bar and tick \textbf{Smart sizing}, which scales the desktop to fit (text gets a little soft). Proper fix: on the Jetson, Settings, Displays, set the resolution to the laptop's (usually 1920 x 1080), or run \code{xrandr} to list the sizes and \code{xrandr -{}-{}output <name> -{}-{}mode 1920x1080} to pick one. The Jetson doesn't resize mid-session, so disconnect and connect again after changing it. A laptop display scale of 125\% or 150\% (Windows Settings, Display, Scale) can also leave bars; Smart sizing covers that too.
   \item Keep someone at the E-stop for powered runs, the same as at the Jetson itself.
 \end{itemize}
 
@@ -1682,9 +1686,10 @@ Ping works but \code{ssh} doesn't & On the Jetson: \code{sudo systemctl enable -
 \code{git pull} fails: local changes & \code{git stash}, then pull again. \\ \hline
 \code{git pull} fails: not a bundle / bad path & Check the USB stick's mount path with \code{ls /\allowbreak{}media/\allowbreak{}\$USER}. \\ \hline
 Changes on the laptop don't appear on the Jetson & You didn't commit before pushing or bundling, or pulled an old bundle. \code{git log -{}-{}oneline -{}1} on both should match. \\ \hline
-Remote desktop: ``credentials did not work'' & Windows sent your own account. Click More choices, Use a different account, then \code{guitar} / \code{password} (section 3.6). If it remembered a wrong login, remove \code{TERMSRV/\allowbreak{}192.168.10.2} in Windows Credential Manager (Windows Credentials) and connect again. \\ \hline
+Remote desktop: ``credentials did not work'' & Windows sent your own account. Under Show Options, set User name to \code{guitar} (or click More choices, Use a different account), then \code{guitar} / \code{password} (section 3.6). If it remembered a wrong login, remove \code{TERMSRV/\allowbreak{}192.168.10.2} in Windows Credential Manager (Windows Credentials) and connect again. \\ \hline
 Remote desktop: ``The token supplied to the function is invalid'' & Remote desktop couldn't read its own login from the locked keyring. On the Jetson's desktop, \code{grdctl status -{}-{}show-{}\allowbreak{}credentials}: if the password isn't \code{password}, make the keyring password blank and set the login again (section 3.6). \\ \hline
 \code{ssh} stopped working after a reboot & SSH isn't set to start at boot. At the Jetson: \code{sudo systemctl enable -{}-{}now ssh}, or turn on Remote Login in Settings, Sharing. \\ \hline
+Remote desktop: black bars around the Jetson's desktop & The Jetson's resolution doesn't match the window. Tick Smart sizing in the title bar menu, or set the Jetson's resolution to the laptop's and reconnect (section 3.6). \\ \hline
 Remote desktop: black screen, lock screen or can't connect & The Jetson must be logged in to its desktop and not locked: turn on automatic login and turn off the screen lock (section 3.6). With no monitor, use an HDMI dummy plug. Check Sharing and Remote Desktop are still on. \\ \hline
 \code{[camera] can't open camera 1} & A USB webcam shows up as \code{/\allowbreak{}dev/\allowbreak{}video0} and \code{/\allowbreak{}dev/\allowbreak{}video1}; only \code{video0} is the picture. Leave \code{-{}-{}camera} off (camera 0). \\ \hline
 Mimic wrist goes the wrong way & \code{calibrate\_\allowbreak{}servo.py -{}-{}wrist}, \code{25 0}: toward the pinky means the camera sign (\code{WRIST\_\allowbreak{}DEV\_\allowbreak{}SIGN}); toward the thumb means the servos (\code{-{}-{}swap dev}). Fix only the one that's wrong (section 5.7). \\ \hline

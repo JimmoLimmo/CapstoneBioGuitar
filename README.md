@@ -345,11 +345,13 @@ Remote desktop shows the Jetson's whole desktop in a window on the laptop, over 
 
 **Each time, on the laptop:**
 1. Plug in the direct cable and check `ping 192.168.10.2`.
-2. Open **Remote Desktop Connection** from the Start menu. Computer: `192.168.10.2`. Click Connect.
-3. Windows fills in your own Microsoft account, which the Jetson won't accept. Click **More choices**, then **Use a different account**.
-4. User name `guitar`, password `password`. Tick Remember me so next time skips this step. Click OK.
-5. If Windows warns that the remote computer's identity can't be verified, click Yes. That's expected on the direct cable.
-6. In a terminal on the remote desktop:
+2. Open **Remote Desktop Connection** from the Start menu and click **Show Options**.
+3. On the General tab: Computer `192.168.10.2`, User name `guitar`, and tick **Allow me to save credentials**. Filling in the user name here means Windows asks for the Jetson's login straight away, instead of trying your own Microsoft account first (no More choices step).
+4. On the Display tab, drag the size slider all the way to **Full Screen**.
+5. Back on the General tab, click **Save As** and save the connection (for example `Jetson.rdp` on the desktop). Next time, double-click that file and skip steps 2 to 5.
+6. Click Connect. Password `password`, tick Remember me, click OK.
+7. If Windows warns that the remote computer's identity can't be verified, click Yes. That's expected on the direct cable.
+8. In a terminal on the remote desktop:
    ```
    cd ~/CapstoneBioGuitar
    python3 run.py mimic --dry-run --show --hand both --wrist   # tracking and sim only, nothing moves
@@ -364,8 +366,10 @@ Remote desktop shows the Jetson's whole desktop in a window on the laptop, over 
   ```
 - The sim, the camera tracking and the servo loop all share the Jetson. The sim is its own process and the servos never wait for it, but if the preview's camera fps drops a lot, add `--no-sim`.
 - With no monitor on the Jetson, remote desktop may show a black or tiny screen. An HDMI dummy plug fixes it.
+- **Full screen and back:** Ctrl + Alt + Break (on some laptops Ctrl + Alt + Fn + Pause). Without a Break key, right-click the window's title bar and choose Full screen. In full screen, the bar at the top centre has the window buttons; Ctrl + Alt + Home brings it up if it's hidden.
+- **Black bars around the desktop:** the Jetson's screen size doesn't match the window. Quick fix: right-click the title bar and tick **Smart sizing**, which scales the desktop to fit (text gets a little soft). Proper fix: on the Jetson, Settings, Displays, set the resolution to the laptop's (usually 1920 x 1080), or run `xrandr` to list the sizes and `xrandr --output <name> --mode 1920x1080` to pick one. The Jetson doesn't resize mid-session, so disconnect and connect again after changing it. A laptop display scale of 125% or 150% (Windows Settings, Display, Scale) can also leave bars; Smart sizing covers that too.
 - "The token supplied to the function is invalid": remote desktop couldn't read its login from the locked keyring. Check `grdctl status --show-credentials` on the Jetson's desktop and redo step 5 if the password isn't `password`.
-- "Credentials did not work": Windows sent your own account, or a wrong one it remembered. Use More choices, or remove `TERMSRV/192.168.10.2` in Windows Credential Manager (Windows Credentials) and connect again.
+- "Credentials did not work": Windows sent your own account, or a wrong one it remembered. Set User name to `guitar` under Show Options (or use More choices), or remove `TERMSRV/192.168.10.2` in Windows Credential Manager (Windows Credentials) and connect again.
 - Keep someone at the E-stop for powered runs, the same as at the Jetson itself.
 
 ### On the Jetson (real hand)
