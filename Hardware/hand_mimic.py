@@ -8,6 +8,7 @@
     python3 run.py mimic --hand right --wrist          # the right hand's tilt drives the robot wrist too
     python3 run.py mimic --swap-hands                  # if your right hand comes up as "left" in the preview
     python3 Hardware/hand_mimic.py --calibrate --hand both --show   # measure your hands once (nothing moves)
+    python3 run.py mimic --control-port 5006           # how gui.py runs it: hands, wrist, swap, preview change live
 
 The left hand is left_hand.py's (one servo per finger). The right hand uses the
 finger servos in fingers.py (base + tip per finger). The sim shows both. With
@@ -22,7 +23,9 @@ easing toward the latest reading, so the hand moves smoothly between frames.
 """
 
 import argparse
+import json
 import os
+import socket
 import statistics
 import sys
 import threading
@@ -46,6 +49,7 @@ from strum_motion import LIFT_FLEX_DEG, WRIST_YAW_DOWN_DEG, WRIST_YAW_UP_DEG, sm
 SIDES = ht.SIDES
 SWITCH_HOLD_S = 0.5    # the camera has to see the other hand for this long before the robot hands swap
 LOST_OPEN_S = 1.0      # with --hand both, a hand out of view this long eases open (and the wrist straightens)
+HAND_MODES = ("auto", "left", "right", "both", "none")   # none = paused, both hands ease open (live only)
 assert set(ht.RIGHT_TRACKING) == set(fm.SERVO_NAMES)
 SAVED = calibration.load().get("tracking", {})
 MEASURED = ht.apply_ranges(SAVED)
@@ -87,6 +91,12 @@ class HandPicker:
             self.active, self.candidate = side, None
         return self.active
 
+    # Change the forced side while running; None goes back to following whichever hand is seen.
+    def force(self, side):
+        self.forced, self.candidate = side, None
+        if side:
+            self.active = side
+
 
 # camera
 
@@ -126,6 +136,60 @@ class CameraThread:
         if self.thread.is_alive():
             self.thread.join(timeout=2.0)
         self.camera.close()
+
+
+# Live settings from gui.py: small JSON messages like {"hand": "both", "wrist": true} on a local UDP port.
+class Control:
+
+    def __init__(self, port):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", port))
+        self.sock.setblocking(False)
+
+    # Everything sent since the last call, merged (newest wins), or None.
+    def take(self):
+        merged = None
+        while True:
+            try:
+                data = self.sock.recv(4096)
+            except OSError:
+                return merged
+            try:
+                msg = json.loads(data)
+            except ValueError:
+                continue
+            if isinstance(msg, dict):
+                merged = {**(merged or {}), **msg}
+
+    def close(self):
+        self.sock.close()
+
+
+# The settings with the valid parts of msg applied.
+def merge_settings(msg, settings):
+    new = dict(settings)
+    if not msg:
+        return new
+    if msg.get("hand") in HAND_MODES:
+        new["hand"] = msg["hand"]
+    for key in ("wrist", "swap", "show"):
+        if isinstance(msg.get(key), bool):
+            new[key] = msg[key]
+    return new
+
+
+def describe(mode, wrist_on, swap):
+    who = {"auto": "whichever hand the camera sees", "both": "both hands at once",
+           "none": "nothing (paused, hands open)"}.get(mode, f"the {mode} hand")
+    return f"following {who}" + (", wrist on" if wrist_on else "") + (", left/right swapped" if swap else "")
+
+
+def wrist_problem(dry_run):
+    if not WRIST_NEUTRAL:
+        return "it needs the right hand's straight pose: run --calibrate --hand right first"
+    if not dry_run and not so.is_calibrated():
+        return "all four wrist servos need calibrating (calibrate_servo.py)"
+    return None
 
 
 def _mean_unit(vectors):
@@ -284,8 +348,11 @@ def main():
     parser.add_argument("--sim-port", type=int, default=DEFAULT_PORT, help="UDP port for --sim-ip")
     parser.add_argument("--calibrate", action="store_true",
                         help="measure your hand open and in a fist (camera only, nothing moves), then quit")
+    parser.add_argument("--control-port", type=int,
+                        help="take live setting changes (hands, wrist, swap, preview) from gui.py on this UDP port")
     args = parser.parse_args()
     both = args.hand == "both"
+    mode = args.hand
 
     if args.calibrate:
         sides = SIDES[::-1] if both else ("right" if args.hand == "auto" else args.hand,)
@@ -303,15 +370,19 @@ def main():
         return
 
     hands = SIDES if args.hand in ("auto", "both") else (args.hand,)
+    live = args.control_port is not None
+    # live: drive every calibrated hand from the start, so the GUI can switch between them
+    drive = tuple(s for s in SIDES if args.dry_run or movable(s)) if live else hands
+    wrist_ok = wrist_problem(args.dry_run) is None
     issues = clashes()
-    if args.wrist:
+    if args.wrist and not live:
         if "right" not in hands:
             issues.append("--wrist follows the right hand; use --hand right, both or auto")
         if not WRIST_NEUTRAL:
             issues.append("--wrist needs the right hand's straight pose: run --calibrate --hand right first")
         if not so.is_calibrated():
             issues.append("--wrist needs all four wrist servos calibrated (calibrate_servo.py)")
-    if not args.dry_run and not any(movable(side) for side in hands):
+    if not args.dry_run and not any(movable(side) for side in drive):
         issues.append("no servo of " + " or ".join(f"the {s} hand" for s in hands) + " is calibrated")
     if issues and not args.dry_run:
         print("[mimic] refusing to move anything:")
@@ -321,7 +392,7 @@ def main():
         return
     for p in issues:
         print(f"[mimic] (dry run) {p}")
-    for side in hands:
+    for side in drive:
         ready = movable(side)
         total = len(lh.LEFT_SERVOS if side == "left" else fm.SERVO_NAMES)
         if len(ready) < total:
@@ -331,6 +402,11 @@ def main():
     else:
         print("[mimic] using guessed ranges; run with --calibrate to measure your hand.")
     wrist_on = args.wrist and bool(WRIST_NEUTRAL)
+    if live:
+        wrist_on = args.wrist and wrist_ok
+        if args.wrist and not wrist_ok:
+            print(f"[mimic] wrist stays straight: {wrist_problem(args.dry_run)}")
+    wrist_driven = wrist_on or (live and wrist_ok)   # live: the wrist holds straight while it's off
 
     camera = ht.Camera(args.camera, hands=2 if both else 1, swap=args.swap_hands)
     if args.show and not camera.preview_works():
@@ -341,8 +417,8 @@ def main():
         args.show = False
 
     tables = {"left": lh.LEFT_SERVOS, "right": fh.FINGER_SERVOS}
-    boards = {tables[side][n]["board"] for side in hands for n in movable(side)}
-    if wrist_on:
+    boards = {tables[side][n]["board"] for side in drive for n in movable(side)}
+    if wrist_driven:
         boards |= {c["board"] for c in so.WRIST_SERVOS.values()}
     bus = so.ServoBus(dry_run=args.dry_run, boards=tuple(sorted(boards)) or ("lv",))
     power = PowerBox(dry_run=args.dry_run, on_safe=bus.release)
@@ -352,6 +428,13 @@ def main():
             print(f"[mimic] streaming both hands to the sim at {bus.sim.addr[0]}:{args.sim_port}")
         except OSError as e:
             print(f"[mimic] can't reach sim address {args.sim_ip} ({e}); continuing without the sim.")
+    control = None
+    if live:
+        try:
+            control = Control(args.control_port)
+        except OSError as e:
+            print(f"[mimic] can't listen on UDP {args.control_port} ({e}); the settings stay as started.")
+    settings = {"hand": args.hand, "wrist": args.wrist, "swap": args.swap_hands, "show": args.show}
 
     picker = HandPicker(None if args.hand in ("auto", "both") else args.hand)
     filters = {side: ht.CurlFilter() for side in SIDES}
@@ -365,7 +448,7 @@ def main():
     period = 1.0 / so.CONTROL_HZ
 
     def output():
-        return write_hands(bus, hands, poses["left"], poses["right"], wrist if wrist_on else None)
+        return write_hands(bus, drive, poses["left"], poses["right"], wrist if wrist_driven else None)
 
     try:
         power.arm(output)
@@ -385,6 +468,24 @@ def main():
                 break
             now = time.perf_counter()
             dt, last = min(now - last, 0.2), now
+
+            new = merge_settings(control.take(), settings) if control else settings
+            if new != settings:
+                if settings["show"] and not new["show"]:
+                    camera.hide()
+                settings, mode = new, new["hand"]
+                both = mode == "both"
+                picker.force(mode if mode in SIDES else None)
+                camera.swap = settings["swap"]
+                camera.want_hands = 2 if both else 1
+                args.show = settings["show"]
+                want_wrist = settings["wrist"] and mode not in ("left", "none")
+                if want_wrist and not wrist_ok:
+                    print(f"[mimic] wrist stays straight: {wrist_problem(args.dry_run)}")
+                wrist_on = want_wrist and wrist_ok
+                if not wrist_on:
+                    wrist_target = dict(STRAIGHT)
+                print(f"[mimic] settings: {describe(mode, wrist_on, settings['swap'])}.")
             if now - fps_since >= 1.0:
                 fps = (grabber.frames - fps_frames) / (now - fps_since)
                 fps_frames, fps_since = grabber.frames, now
@@ -392,7 +493,11 @@ def main():
             item = grabber.take()
             if item is not None:
                 frame, seen, stamp = item
-                if both:
+                if mode == "none":
+                    followed, active, head = {}, None, "paused"
+                    for side in SIDES:
+                        targets[side] = open_pose(side)
+                elif both:
                     followed = {}
                     for h in seen:
                         if h.label in SIDES and h.label not in followed:
@@ -440,15 +545,20 @@ def main():
                 lines = [f"{head}  camera {fps:.0f} fps"]
                 if wrist_on:
                     lines.append(f"wrist  deviation {wrist['dev']:+5.1f} deg  flexion {wrist['flex']:+5.1f} deg")
-                if "right" in hands and (both or active == "right"):
+                if "right" in drive and (both or active == "right"):
                     lines += right_lines(bends.get("right", {}), poses["right"])
-                if "left" in hands and (both or active == "left"):
+                if "left" in drive and (both or active == "left"):
                     lines += lh.status_lines(bends.get("left", {}), poses["left"], lh.pulses(poses["left"]))
                 if args.dry_run and now >= next_print:
                     print(" | ".join(lines) if seen else f"[mimic] no hand in view  (camera {fps:.0f} fps)")
                     next_print = now + 0.5
-                if args.show and not camera.show(frame, seen, lines):
-                    break
+                if args.show:
+                    try:
+                        if not camera.show(frame, seen, lines):
+                            break
+                    except camera.cv2.error:
+                        print("[mimic] can't open a preview window here.")
+                        args.show = False
 
             for side in SIDES:
                 poses[side] = ht.follow(poses[side], targets[side], dt)
@@ -468,12 +578,14 @@ def main():
     finally:
         if power.state == "ARMED" and not power.tripped.is_set() and not power.closed:
             try:
-                ease_open(bus, power, hands, poses["left"], poses["right"], wrist if wrist_on else None)
+                ease_open(bus, power, drive, poses["left"], poses["right"], wrist if wrist_driven else None)
             except Exception as e:
                 print(f"[mimic] could not open the hands ({e})")
         power.close()
         bus.release()
         grabber.close()
+        if control:
+            control.close()
         print("[mimic] stopped -- signals off, servos released.")
 
 

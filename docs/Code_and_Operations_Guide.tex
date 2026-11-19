@@ -279,8 +279,8 @@ E-stop (pendant) & Press = all servo power off immediately, in hardware. Twist t
 1 (3.3 V) & VCC on both PCA9685 boards & Logic power only \\ \hline
 3 / 5 & SDA / SCL on both boards & I2C bus 7 \\ \hline
 9 (GND) & GND on both boards & Common ground with the box \\ \hline
-31 & OE on both boards + 10 k\textohm{} pull-up to 3.3 V & HIGH = all servo signals off. Set as GPIO in Jetson-IO. \\ \hline
-15 & E-stop NC2 + 10 k\textohm{} pull-up to pin 17 & LOW = released, HIGH = pressed or cable cut. Set as GPIO in Jetson-IO. \\ \hline
+31 & OE on both boards + 10 k\textohm{} pull-up (R5) to 3.3 V & HIGH = all servo signals off. Set as GPIO in Jetson-IO. Disconnected from the boards as of 2026-11-19; the code still drives it. \code{oe\_\allowbreak{}check.py} (section 2.9) if it's reconnected. \\ \hline
+15 & E-stop NC2 + 2.2 k\textohm{} pull-up (R4) to pin 17 & LOW = released, HIGH = pressed or cable cut. Set as GPIO in Jetson-IO. Check with \code{estop\_\allowbreak{}check.py} (section 2.9). \\ \hline
 14 (GND) & Other side of E-stop NC2 &  \\ \hline
 4 / 6 & Fan + / - &  \\ \hline
 7, 11, 13 & Nothing & Leave empty \\ \hline
@@ -323,6 +323,7 @@ E-stop (pendant) & Press = all servo power off immediately, in hardware. Twist t
 
 \subsection{Check at the start of every session (5 minutes)}
 \begin{enumerate}
+  \item Jetson on: run \code{servo Hardware/\allowbreak{}estop\_\allowbreak{}check.py}, press and release the E-stop a few times. Each press shows PRESSED straight away and stays until you twist it out (section 2.9). Ctrl-C to quit.
   \item MAIN on, E-stop released, press RESET: SERVO LED on and stays on.
   \item Press the E-stop: SERVO LED goes off. Release it: SERVO LED \textbf{stays off}.
   \item Press RESET again: SERVO LED back on.
@@ -335,6 +336,35 @@ servo Hardware/test_one_servo.py <channel> <hv|lv>
   \item Press the E-stop mid-wiggle: the servo goes limp and the terminal prints SAFE.
   \item Run it again and press Ctrl-C mid-wiggle: it stops cleanly.
 \end{enumerate}
+
+
+\subsection{E-stop and OE wiring checks}
+Run these after building or rewiring the box, or if a script ever misses an E-stop press. Neither needs calibration.
+
+\subsubsection*{E-stop sense (pin 15)}
+Only the Jetson needs to be on. Nothing is driven.
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/estop_check.py
+\end{codeblock}
+%%end novalidate
+Press and release the E-stop a few times, then Ctrl-C. Each press should show PRESSED straight away and stay that way until you twist it out. The times count from when the script started.
+\begin{itemize}
+  \item \textbf{Never changes, or flickers when you touch the wires or a meter probe:} pin 15 is floating. R4 goes from pin 17 to pin 15, not to pin 14. Pin 15 has two wires on it (R4 and one side of NC2); pin 14 has only the other side of NC2. With the Jetson on, pin 15 to pin 14 reads 0 V released and 3.3 V pressed.
+  \item \textbf{Drops back to released while the E-stop is still pressed:} a loose jumper or crimp. Wiggle each wire while the script runs.
+  \item \textbf{Servo power cuts but the Jetson never sees it:} NC1 (servo power) and NC2 (Jetson) are separate contact blocks. Take NC2's wires off and check it alone: continuity when released, open when pressed.
+  \item The top of the output shows how the kernel has the pin set up. \code{function gp} and \code{in} mean Jetson-IO is right.
+\end{itemize}
+
+\subsubsection*{Output enable (pin 31)}
+Only if OE is reconnected (it's off the boards right now). Box powered, RESET pressed (SERVO LED on).
+%%begin novalidate
+\begin{codeblock}
+servo Hardware/oe_check.py            # wrist servo, channel 10 on lv
+servo Hardware/oe_check.py 0 hv       # a finger servo on hv
+\end{codeblock}
+%%end novalidate
+It sends a pulse with OE HIGH (the servo should stay still), then sets OE LOW (now it should move), twice, asks after each step and prints a verdict. The moves are a few degrees. Run it once for each board: they share pin 31, but each board has its own OE wire. A meter on pin 31 to pin 14 reads 3.3 V with OE HIGH and about 0 V with OE LOW. If the servo moves with OE HIGH, check the OE wire to that board and that R5 goes from pin 31 to 3.3 V, not to ground.
 
 
 \section{Jetson setup and moving code}
@@ -358,7 +388,7 @@ git clone https://github.com/<owner>/<repo>.git CapstoneBioGuitar-main
 cp Hardware/calibration.example.json Hardware/calibration.json
 \end{codeblock}
 %%end novalidate
-  \item \textbf{Check the box} (section 2.8) before the first powered run.
+  \item \textbf{Check the box} (sections 2.8 and 2.9) before the first powered run.
 \end{enumerate}
 
 \subsubsection*{Direct Ethernet link}
@@ -962,6 +992,8 @@ sudo env POWERBOX_AUTO_ARM=5 PYTHONPATH=$(python3 -m site --user-site) python3 H
 \code{python3 Hardware/\allowbreak{}servo\_\allowbreak{}output.py -{}-{}dry-{}\allowbreak{}run} & No hardware: prints the strum schedule and servo demand \\ \hline
 \code{python3 Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py -{}-{}show} & What is calibrated and what is missing \\ \hline
 \code{servo Hardware/\allowbreak{}test\_\allowbreak{}one\_\allowbreak{}servo.py 3 lv} & Wiggle one servo (channel, board \code{hv}/\code{lv} or 0x40/0x41). Wiring check. \\ \hline
+\code{servo Hardware/\allowbreak{}estop\_\allowbreak{}check.py} & Watch the E-stop pin live (section 2.9) \\ \hline
+\code{servo Hardware/\allowbreak{}oe\_\allowbreak{}check.py 10 lv} & Check OE turns the servo signals off, if OE is wired (section 2.9) \\ \hline
 \code{servo Hardware/\allowbreak{}calibrate\_\allowbreak{}servo.py ...} & Calibration (section 4) \\ \hline
 \end{longtable}}
 
@@ -1432,6 +1464,8 @@ Last year's \code{Imitation/\allowbreak{}mimic.py}, moved onto the box and the s
 \code{run\_\allowbreak{}log.py} & \code{RunLog}: record each control tick and save a CSV (section 11.3) \\ \hline
 \code{test\_\allowbreak{}one\_\allowbreak{}servo.py CH [hv\textbar{}lv]} & Wiggle one channel through the safety layer. No calibration needed. Board defaults to \code{hv}. \\ \hline
 \code{test\_\allowbreak{}one\_\allowbreak{}servo\_\allowbreak{}armed.py CH [ADDR]} & Same check, older form. Its top comment labels the boards the old way round. \\ \hline
+\code{estop\_\allowbreak{}check.py} & Prints pin 15 live as you press and release the E-stop, plus the pin's kernel setup. Drives nothing. \\ \hline
+\code{oe\_\allowbreak{}check.py [CH] [hv\textbar{}lv]} & Sends pulses with OE HIGH, then LOW, and asks whether the servo moved. Defaults to channel 10 on \code{lv}. \\ \hline
 \code{relay\_\allowbreak{}polarity\_\allowbreak{}test.py} & Only for the alternative relay wiring. Not used with REV 3. \\ \hline
 \code{hand\_\allowbreak{}link.py} & Learned-strum bridge: \code{HardwareSink} drives the wrist directly, \code{UdpSink} sends to \code{hand\_\allowbreak{}link.py -{}-{}listen} on the Jetson (parks if packets stop) \\ \hline
 \end{longtable}}
@@ -1652,11 +1686,13 @@ Kept for reference. Only two pieces are used by the current code: \code{Parsing/
 \endhead
 RESET does nothing (SERVO LED stays off) & MAIN on? E-stop twisted out? F3 (1 A) blown? TH1 open because K1 got hot (wait for it to cool)? Then the RESET wiring from +5 V hub B to point A. \\ \hline
 SERVO LED on while RESET is held, off when you let go & The seal-in isn't holding: diode D1 (stripe toward point A), the wire from K1 NO to D1, or point A. \\ \hline
-Script prints SAFE: E-stop is pressed, with the E-stop released & Pin 15 wiring: NC2 to pins 15 and 14, the 10 k\textohm{} pull-up from pin 15 to pin 17, and the 4-core E-stop cable. If it happens right after starting, the E-stop cable may be unplugged. \\ \hline
+Script prints SAFE: E-stop is pressed, with the E-stop released & Pin 15 wiring: NC2 to pins 15 and 14, the 2.2 k\textohm{} pull-up (R4) from pin 15 to pin 17, and the 4-core E-stop cable. If it happens right after starting, the E-stop cable may be unplugged. \\ \hline
 Script arms but no servo moves & SERVO LED on? Board V+ screw terminal has voltage? Pin 31 reads \textasciitilde{}0 V while armed (OE)? Servo on the channel and board you typed, brown wire on the GND row? \\ \hline
 Servo powered and getting a signal but not moving & Is it tied to a tight string? Unhook the horn and test it free. Is it on the right board for its voltage (fingers on \code{hv}, wrist and left hand on \code{lv})? \\ \hline
 Finger board (\code{hv}) V+ reads nothing or 5 V & 8.4 V adapter plugged in? Wire from K2 NO to the \code{hv} board's V+? No V+ wire in the chain cable? \\ \hline
 \code{i2cdetect} doesn't show 40 and 41 & VCC/SDA/SCL/GND wires to pins 1/3/5/9 and along the chain cable. A board missing = its logic wiring. The boards' VCC needs the Jetson to be on. \\ \hline
+Servo power cuts on an E-stop press but the script doesn't print SAFE, or prints it late & Run \code{estop\_\allowbreak{}check.py} (section 2.9). Usually pin 15 floating: R4 on pin 14 instead of pin 15, or a loose jumper. Pin 15 to pin 14 should read 0 V released, 3.3 V pressed. \\ \hline
+A servo moves before you press Enter (OE HIGH) & If OE is wired: run \code{oe\_\allowbreak{}check.py} on each board (section 2.9). Check the OE wire from pin 31 to that board, and that R5 goes to 3.3 V, not ground. \\ \hline
 F1 (10 A) blows & A short on the 5 V side. Find it before replacing the fuse. \\ \hline
 \end{longtable}}
 

@@ -97,6 +97,7 @@ Run every command from the repo root (`CapstoneBioGuitar-main/`). The scripts us
 | `Hardware/left_hand.py` | The left hand's servos. Last year's `Imitation/mimic.py`, moved onto this box; the camera part is in `Sim/hand_tracking.py`. |
 | `Hardware/i2c_bus.py`, `Hardware/run_log.py` | Helpers: open I2C bus 7; record each control tick to a CSV. |
 | `Hardware/test_one_servo.py`, `test_one_servo_armed.py` | Quick wiring checks for one channel. |
+| `Hardware/estop_check.py`, `oe_check.py` | Safety wiring checks: watch the E-stop pin live, and check that OE really turns the servo signals off (section 8). |
 | `Hardware/relay_polarity_test.py` | Only for an alternative relay wiring. Not used with the REV 3 box. |
 | `Testing/hand_tests.py` | The CDR test plan: fingertip accuracy, strum repeatability, tempo. |
 | `requirements.txt`, `requirements-jetson.txt` | Python packages for the laptop and for the Jetson (section 7). |
@@ -173,8 +174,8 @@ Each wrist axis is two servos pulling strings on opposite sides of a ball joint.
 | I2C | Bus 7 (Jetson header pins 3 and 5). Check with `sudo i2cdetect -y -r 7`. |
 | `hv` board, 0x40 | 8.4 V PCA9685: right-hand finger servos only |
 | `lv` board, 0x41 | 5 V PCA9685 (changing to 6.4 V): wrist on ch 10-13, left hand on ch 1-4 |
-| Pin 31 | OE on both boards. HIGH means every servo signal is off. A pull-up holds it HIGH at boot or after a crash. |
-| Pin 15 | E-stop sense. HIGH means pressed or cable cut. |
+| Pin 31 | OE on both boards. HIGH means every servo signal is off. R5 (10k, pin 31 to 3.3 V) holds it HIGH at boot or after a crash. Disconnected from the boards as of 2026-11-19 (the code still drives pin 31, which does nothing with the wire off). |
+| Pin 15 | E-stop sense. R4 (2.2k) from pin 15 to pin 17, E-stop NC2 from pin 15 to pin 14. LOW means released, HIGH means pressed or cable cut. |
 | Servo power | Switched in hardware only. RESET turns it on; E-stop, thermal switch, fuse or MAIN turn it off. The Jetson doesn't control the relays. |
 
 Note: the REV 3 wiring sheets show the two board addresses the other way round. The code follows what `i2cdetect` showed on the real box (checked 2026-11-10).
@@ -393,6 +394,32 @@ Remote desktop shows the Jetson's whole desktop in a window on the laptop, over 
 ## 8. Bench procedures
 
 Run these on the Jetson with the box powered. Each servo script starts with signals off and waits for Enter. Values you save go to `Hardware/calibration.json`.
+
+### E-stop and OE checks
+
+Run these after building or rewiring the box, or if a script ever misses an E-stop press.
+
+**E-stop sense (pin 15).** Only the Jetson needs to be on. Nothing is driven.
+
+```
+servo Hardware/estop_check.py
+```
+
+Press and release the E-stop a few times, then Ctrl-C. Each press should show PRESSED straight away and stay that way until you twist it out. The times count from when the script started.
+
+- Never changes, or flickers when you touch the wires or a meter probe: pin 15 is floating. R4 goes from pin 17 to pin 15, not to pin 14. With the Jetson on, pin 15 to pin 14 reads 0 V released and 3.3 V pressed.
+- Drops back to released while the E-stop is still pressed: a loose jumper or crimp. Wiggle each wire while the script runs.
+- Servo power cuts but the Jetson never sees it: NC1 (servo power) and NC2 (Jetson) are separate contact blocks. Take NC2's wires off and check it alone: continuity when released, open when pressed.
+- The top of the output shows how the kernel has the pin set up. `function gp` and `in` mean Jetson-IO is right.
+
+**Output enable (pin 31).** Only if OE is reconnected (it's off the boards right now). Box powered, RESET pressed.
+
+```
+servo Hardware/oe_check.py            # wrist servo, channel 10 on lv
+servo Hardware/oe_check.py 0 hv       # a finger servo on hv
+```
+
+It sends a pulse with OE HIGH (the servo should stay still), then sets OE LOW (now it should move), twice, asks after each step and prints a verdict. The moves are a few degrees. Run it once for each board: they share pin 31, but each board has its own OE wire. A meter on pin 31 to pin 14 reads 3.3 V with OE HIGH and about 0 V with OE LOW. If the servo moves with OE HIGH, check the OE wire to that board and that R5 goes from pin 31 to 3.3 V, not to ground.
 
 ### Wiring check (no calibration needed)
 

@@ -95,6 +95,8 @@ def main():
         # sudo's python can't see packages pip installed for this user (opencv, mediapipe)
         paths = [p for p in (site.getusersitepackages(), os.environ.get("PYTHONPATH")) if p and os.path.exists(p.split(os.pathsep)[0])]
         env = ["PYTHONPATH=" + os.pathsep.join(paths)] if paths else []
+        if os.environ.get("PYTHONUNBUFFERED"):   # gui.py reads the output live
+            env.append("PYTHONUNBUFFERED=1")
         # sudo also drops the desktop's display, so preview windows (--show) wouldn't open
         if os.environ.get("DISPLAY"):
             env.append("DISPLAY=" + os.environ["DISPLAY"])

@@ -236,14 +236,27 @@ class Camera:
         self.capture = cv2.VideoCapture(index)
         if not self.capture.isOpened():
             raise SystemExit(f"[camera] can't open camera {index}. Check: ls /dev/video*")
+        self.options = (BaseOptions, HandLandmarker, HandLandmarkerOptions, RunningMode)
+        self.landmarker = None
+        self.hands = None
+        self.want_hands = hands   # set this to change how many hands it looks for; applied on the next read
+        self._tracker()
+
+    def _tracker(self):
+        BaseOptions, HandLandmarker, HandLandmarkerOptions, RunningMode = self.options
+        if self.landmarker is not None:
+            self.landmarker.close()
+        self.hands = self.want_hands
         self.landmarker = HandLandmarker.create_from_options(HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=MODEL_PATH),
             running_mode=RunningMode.VIDEO,
-            num_hands=hands,
+            num_hands=self.hands,
         ))
 
     # (frame, [Seen for each hand in view]); frame is None if the camera gave nothing.
     def read(self):
+        if self.want_hands != self.hands:
+            self._tracker()
         ok, frame = self.capture.read()
         if not ok:
             return None, []
@@ -277,6 +290,13 @@ class Camera:
             cv2.putText(frame, line, (10, 30 + 25 * row), cv2.FONT_HERSHEY_PLAIN, 1.5, (255, 255, 255), 2)
         cv2.imshow(title, cv2.resize(frame, (960, 540)))
         return cv2.waitKey(1) & 0xFF != ord("q")
+
+    def hide(self, title="hand mimic"):
+        try:
+            self.cv2.destroyWindow(title)
+            self.cv2.waitKey(1)
+        except self.cv2.error:
+            pass
 
     def preview_works(self, title="hand mimic"):
         frame, seen = self.read()
